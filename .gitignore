@@ -1,0 +1,6 @@
+node_modules/
+.wrangler/
+.dev.vars
+# Holds account and policy numbers from the checklists. Run it once against D1; never commit it.
+seed.sql
+export/

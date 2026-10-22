@@ -1,0 +1,14 @@
+{
+  "name": "move",
+  "private": true,
+  "type": "module",
+  "description": "Box labels, QR scanning and move checklists for move.rog42.net (Cloudflare Pages + D1)",
+  "scripts": {
+    "db:local": "wrangler d1 execute move --local --file=schema.sql",
+    "dev": "wrangler pages dev public",
+    "deploy": "wrangler pages deploy public"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

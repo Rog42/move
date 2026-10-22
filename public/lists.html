@@ -1,0 +1,465 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>Move Checklists</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Saira+Stencil+One&display=swap">
+<style>
+/* One narrow column: stencil countdown + from/to, progress, questions, then two tabbed lists bucketed by when each job is due */
+:root {
+  --bg: #F1F4F2; --surface: #FFFFFF; --ink: #17201C; --muted: #586560; --line: #D7DED9;
+  --accent: #0D6A56; --accent-soft: #DEEEE8; --on-accent: #FFFFFF;
+  --tape: #A86F00; --tape-soft: #FBEFD3; --late: #B3261E; --late-soft: #FBE3E0;
+  --f-display: "Saira Stencil One", "Arial Narrow", Impact, sans-serif;
+  --f-body: "Instrument Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --f-mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+  --r: 10px;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #0F1412; --surface: #161D1A; --ink: #E3E9E5; --muted: #9AA8A1; --line: #29332F;
+    --accent: #4CC1A2; --accent-soft: #15302A; --on-accent: #0F1412;
+    --tape: #EDB441; --tape-soft: #33290F; --late: #F2877D; --late-soft: #3B1C1A; color-scheme: dark; }
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font-family: var(--f-body); font-size: 15px; line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: calc(20px + env(safe-area-inset-top, 0px)) calc(56px + env(safe-area-inset-bottom, 0px));
+  -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 22px; }
+button, input, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+h1, h2, h3 { text-wrap: balance; margin: 0; }
+.eyebrow { font-family: var(--f-mono); font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+
+.nav { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.nav a { color: var(--accent); font-weight: 600; font-size: 14px; text-underline-offset: 3px; }
+
+.box { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 20px; display: grid; grid-template-columns: auto 1fr; gap: 6px 22px; align-items: center; }
+.count { font-family: var(--f-display); font-size: 92px; line-height: .86; color: var(--accent); letter-spacing: .01em; font-variant-numeric: tabular-nums; }
+.count-side { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.count-side h1 { font-size: 26px; font-weight: 700; letter-spacing: -.01em; line-height: 1.15; }
+.count-side .sub { color: var(--muted); }
+.route { grid-column: 1 / -1; margin-top: 14px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; border-top: 1px dashed var(--line); padding-top: 14px; }
+.leg { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.leg .addr { font-weight: 600; }
+.leg input { width: 100%; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); font-weight: 600; font-size: 16px; }
+.leg input::placeholder { color: var(--muted); font-weight: 400; }
+.saved { font-size: 12px; color: var(--muted); min-height: 1em; }
+@media (max-width: 520px) { .box { grid-template-columns: 1fr; } .count { font-size: 76px; } .route { grid-template-columns: 1fr; } }
+
+.progress { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+.prog { display: flex; flex-direction: column; gap: 6px; }
+.prog .top { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; }
+.prog .top b { font-weight: 600; }
+.prog .top span { font-family: var(--f-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.bar { height: 6px; border-radius: 99px; background: var(--line); overflow: hidden; }
+.bar i { display: block; height: 100%; background: var(--accent); border-radius: 99px; transition: width .3s ease; }
+
+.qs { background: var(--tape-soft); border-radius: 14px; padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; }
+.qs-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.qs-head h2 { font-size: 16px; font-weight: 700; }
+.qs-head p { margin: 0; color: var(--muted); font-size: 13.5px; }
+.linkbtn { background: none; border: 0; padding: 0; color: var(--accent); font-weight: 600; font-size: 13.5px; text-decoration: underline; text-underline-offset: 3px; }
+.q { display: grid; grid-template-columns: 1fr auto; gap: 4px 14px; align-items: center; padding-top: 10px; border-top: 1px solid color-mix(in srgb, var(--tape) 25%, transparent); }
+.q p { margin: 0; font-weight: 500; min-width: 0; }
+.q .why { grid-column: 1 / 2; font-size: 12.5px; color: var(--muted); }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 99px; overflow: hidden; background: var(--surface); grid-row: 1 / span 2; grid-column: 2; }
+.seg button { border: 0; background: none; padding: 6px 14px; font-size: 13.5px; font-weight: 600; color: var(--muted); }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); }
+.seg button + button { border-left: 1px solid var(--line); }
+@media (max-width: 520px) { .q { grid-template-columns: 1fr; } .seg { grid-row: auto; grid-column: 1; justify-self: start; } }
+
+.controls { display: flex; flex-direction: column; gap: 12px; position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--bg); padding-block: 10px 8px; margin-block: -10px -8px; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg); }
+.tabs { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 4px; }
+.tab { border: 0; background: none; border-radius: 9px; padding: 9px 8px; font-weight: 600; font-size: 14px; display: flex; justify-content: center; align-items: baseline; flex-wrap: wrap; column-gap: 7px; color: var(--muted); }
+.tab small { font-family: var(--f-mono); font-size: 12px; font-weight: 400; font-variant-numeric: tabular-nums; }
+.tab[aria-selected="true"] { background: var(--ink); color: var(--bg); }
+.filters { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip { border: 1px solid var(--line); background: var(--surface); border-radius: 99px; padding: 4px 12px; font-size: 13px; font-weight: 500; color: var(--muted); }
+.chip[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.toggle { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); cursor: pointer; }
+.toggle input { accent-color: var(--accent); width: 16px; height: 16px; }
+
+.bucket { display: flex; flex-direction: column; gap: 8px; }
+.bucket-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding-inline: 2px; }
+.bucket-head { flex-wrap: wrap; }
+.bucket-head h3 { font-size: 13px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; }
+.bucket-head span { font-family: var(--f-mono); font-size: 12px; color: var(--muted); margin-left: auto; text-align: right; }
+.bucket.is-overdue .bucket-head h3 { color: var(--late); }
+.bucket.is-moveday .bucket-head h3 { color: var(--tape); }
+ul.items { list-style: none; margin: 0; padding: 0; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); }
+.item { display: grid; grid-template-columns: 28px 1fr; gap: 12px; padding: 13px 14px; }
+.item + .item { border-top: 1px solid var(--line); }
+.check { width: 24px; height: 24px; border-radius: 7px; border: 2px solid var(--muted); background: none; padding: 0; display: grid; place-items: center; margin-top: 1px; }
+.check svg { width: 14px; height: 14px; opacity: 0; }
+.check:hover { border-color: var(--accent); }
+.is-done .check { background: var(--accent); border-color: var(--accent); }
+.is-done .check svg { opacity: 1; stroke: var(--on-accent); }
+.is-na .check { border-style: dashed; opacity: .6; }
+.check:disabled { cursor: default; }
+.body { min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+.name { font-weight: 600; line-height: 1.35; }
+.is-done .name, .is-na .name { color: var(--muted); text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--muted) 60%, transparent); }
+.detail { margin: 0; color: var(--muted); font-size: 14px; }
+.meta { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; font-size: 12px; }
+.who { font-weight: 700; font-size: 11px; letter-spacing: .05em; text-transform: uppercase; padding: 2px 7px; border-radius: 5px; background: var(--accent-soft); color: var(--accent); }
+.who-Lu { background: var(--tape-soft); color: var(--tape); }
+.who-Both { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
+.due { font-family: var(--f-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.due.is-soon { color: var(--tape); font-weight: 500; }
+.due.is-late { color: var(--late); font-weight: 500; }
+.tag { padding: 1px 7px; border-radius: 5px; border: 1px solid var(--line); color: var(--muted); }
+.tag-legal { border-color: var(--late); color: var(--late); background: var(--late-soft); }
+.tag-pri { border-color: var(--tape); color: var(--tape); }
+.grp { color: var(--muted); }
+.grp::before { content: "·"; margin-right: 8px; }
+.more { margin-left: auto; background: none; border: 0; padding: 2px 0; color: var(--accent); font-weight: 600; font-size: 12.5px; }
+.closed-by { color: var(--muted); }
+.more-panel { margin-top: 6px; padding: 12px; border-radius: 8px; background: var(--bg); display: flex; flex-direction: column; gap: 8px; font-size: 14px; }
+.more-panel p { margin: 0; max-width: 64ch; }
+.ref { font-family: var(--f-mono); font-size: 12.5px; color: var(--ink); overflow-wrap: anywhere; }
+.links { display: flex; flex-wrap: wrap; gap: 8px 14px; }
+.links a { color: var(--accent); font-weight: 600; font-size: 13.5px; text-underline-offset: 3px; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.btn { border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 6px 12px; font-size: 13px; font-weight: 600; }
+.btn-primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.btn-danger { color: var(--late); }
+
+.add { background: var(--surface); border: 1px dashed var(--line); border-radius: var(--r); padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+.add h3 { font-size: 14px; font-weight: 700; }
+.add-row { display: grid; grid-template-columns: 1fr 110px 150px auto; gap: 8px; }
+.add input, .add select { padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); min-width: 0; width: 100%; font-size: 16px; }
+@media (max-width: 680px) { .add-row { grid-template-columns: 1fr 1fr; } .add-row .grow { grid-column: 1 / -1; } }
+.empty { text-align: center; color: var(--muted); padding: 36px 16px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); }
+.empty b { color: var(--ink); display: block; margin-bottom: 4px; }
+.foot { font-size: 12.5px; color: var(--muted); }
+.toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(18px + env(safe-area-inset-bottom, 0px)); background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 10px; font-size: 14px; max-width: calc(100% - 32px); z-index: 20; }
+[hidden] { display: none !important; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav class="nav" aria-label="Move pages"><span class="eyebrow">Move checklists</span><a href="/">Box scanning</a></nav>
+
+  <header class="box" aria-label="Move summary">
+    <div class="count" id="count">–</div>
+    <div class="count-side">
+      <span class="eyebrow" id="moveLabel">Move day</span>
+      <h1 id="countWords">days to move day</h1>
+      <span class="sub">Utilities to switch over and every account that needs the new address.</span>
+    </div>
+    <div class="route">
+      <div class="leg">
+        <span class="eyebrow">Moving out of</span>
+        <span class="addr" id="fromAddr">133 Oratava Ave, West Pennant Hills</span>
+      </div>
+      <div class="leg">
+        <label class="eyebrow" for="newAddr">Moving into</label>
+        <input id="newAddr" type="text" autocomplete="off" placeholder="Add once the lease is signed">
+        <span class="saved" id="addrSaved" aria-live="polite"></span>
+      </div>
+    </div>
+  </header>
+
+  <div class="progress" id="progress"></div>
+  <section class="qs" id="qs" aria-label="Questions that shape the lists"></section>
+
+  <div class="controls">
+    <div class="tabs" role="tablist" id="tabs"></div>
+    <div class="filters">
+      <div class="chips" id="who" aria-label="Show jobs for"></div>
+      <label class="toggle"><input type="checkbox" id="hideDone"> Hide done</label>
+    </div>
+  </div>
+
+  <main id="lists" aria-live="polite">
+    <div class="empty"><b>Loading the lists</b>Ticks and answers are shared, so Lu sees the same state on her phone.</div>
+  </main>
+
+  <form class="add" id="addForm" autocomplete="off">
+    <h3>Add something we missed</h3>
+    <div class="add-row">
+      <input class="grow" id="addName" type="text" placeholder="e.g. Hills Shire library card" required>
+      <select id="addOwner" aria-label="Whose job"><option>Rog</option><option>Lu</option><option>Both</option></select>
+      <input id="addDue" type="date" aria-label="Due by">
+      <button class="btn btn-primary" type="submit">Add</button>
+    </div>
+  </form>
+
+  <p class="foot">Built from Rog's inbox on 22 Oct 2026, plus the standard NSW change-of-address set. Pick Rog or Lu above and your ticks are signed with that name. “Open the email” links only work in Rog's Gmail.</p>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+(function () {
+  "use strict";
+  const MOVE_DEFAULT = "2026-11-07";
+  const DAY = 86400000;
+  const API = "/api/lists";
+  const LISTS = { house: "Utilities & house", accounts: "Address changes" };
+  const QUESTIONS = [
+    { k: "sameNames", q: "Will the new lease have exactly the same names as the Oratava lease?", why: "Same names means you can transfer the bond instead of finding a second one." },
+    { k: "gas", q: "Does the new place have mains gas?" },
+    { k: "charger", q: "Is there an EV wall charger to move, or one to install at the new place?" },
+    { k: "contents", q: "Do you have home contents insurance now?", why: "None turned up in the inbox." },
+    { k: "health", q: "Do either of you have private health insurance?", why: "None turned up in the inbox." },
+    { k: "bike", q: "Is the BMW insured beyond the CTP green slip?" },
+    { k: "wwcc", q: "Do either of you hold a NSW Working With Children Check?" },
+    { k: "lessons", q: "Will Lu teach private students at the new place?" }
+  ];
+  const BUCKETS = [
+    ["overdue", "Overdue"], ["week", "Next 7 days"], ["before", "Before move day"],
+    ["moveday", "Move day"], ["fortnight", "First fortnight in"], ["later", "Later"],
+    ["anytime", "Whenever suits"], ["closed", "Done or skipped"]
+  ];
+
+  let items = [], settings = { answers: {} }, state = "loading", lockedMsg = "";
+  const ui = { list: "house", who: "all", hideDone: false, qsOpen: null };
+  const open = new Set(), busy = new Set();
+  try { const s = JSON.parse(localStorage.getItem("moveListsUi") || "{}"); Object.assign(ui, { list: LISTS[s.list] ? s.list : "house", who: ["all", "Rog", "Lu"].includes(s.who) ? s.who : "all", hideDone: !!s.hideDone }); } catch (e) {}
+  function saveUi() { try { localStorage.setItem("moveListsUi", JSON.stringify({ list: ui.list, who: ui.who, hideDone: ui.hideDone })); } catch (e) {} }
+
+  const $ = (s) => document.querySelector(s);
+  const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  function pd(s) { if (!s || typeof s !== "string") return null; const p = s.split("-").map(Number); if (p.length !== 3 || p.some(isNaN)) return null; return new Date(p[0], p[1] - 1, p[2]); }
+  function today() { const n = new Date(); return new Date(n.getFullYear(), n.getMonth(), n.getDate()); }
+  function fmt(d) { return d.toLocaleDateString("en-AU", { weekday: "short", day: "numeric", month: "short" }); }
+  function moveDate() { return pd(settings.moveDate) || pd(MOVE_DEFAULT); }
+  function answers() { return settings.answers || {}; }
+  function applies(it) { return !it.cond || answers()[it.cond.q] === it.cond.is; }
+  function forWho(it) { return ui.who === "all" || it.owner === ui.who || it.owner === "Both"; }
+  const me = () => (ui.who === "Rog" || ui.who === "Lu" ? ui.who : null);
+
+  let toastTimer;
+  function toast(msg) { const t = $("#toast"); t.textContent = msg; t.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, 3200); }
+
+  async function api(path, method, body) {
+    const r = await fetch(API + path, { method: method || "GET", headers: { "content-type": "application/json" }, cache: "no-store", credentials: "same-origin", body: body === undefined ? undefined : JSON.stringify(body) });
+    let data = null; try { data = await r.json(); } catch (e) {}
+    if (!r.ok) { const err = new Error((data && data.error) || "HTTP " + r.status); err.status = r.status; throw err; }
+    return data;
+  }
+  const patchItem = (id, f) => api("/doc/items/" + encodeURIComponent(id), "PATCH", f);
+  const patchSettings = async (f) => {
+    try { await api("/doc/meta/settings", "PATCH", f); }
+    catch (e) { if (e.status === 404) await api("/doc/meta/settings", "PUT", Object.assign({ moveDate: MOVE_DEFAULT, newAddress: "", answers: {} }, f, { answers: Object.assign({}, answers(), f.answers || {}) })); else throw e; }
+  };
+
+  function bucketOf(it) {
+    if (it.status === "done" || it.status === "na") return "closed";
+    const d = pd(it.due); if (!d) return "anytime";
+    const t = today(), m = moveDate();
+    if (d < t) return "overdue";
+    if (+d === +m) return "moveday";
+    if (d < m) return (d - t) / DAY <= 7 ? "week" : "before";
+    if ((d - m) / DAY <= 14) return "fortnight";
+    return "later";
+  }
+
+  function renderHeader() {
+    const m = moveDate(), t = today(), days = Math.round((m - t) / DAY);
+    $("#moveLabel").textContent = "Move day · " + m.toLocaleDateString("en-AU", { weekday: "short", day: "numeric", month: "short", year: "numeric" });
+    if (days > 0) { $("#count").textContent = days; $("#countWords").textContent = days === 1 ? "day to move day" : "days to move day"; }
+    else if (days === 0) { $("#count").textContent = "0"; $("#countWords").textContent = "It's move day"; }
+    else { $("#count").textContent = -days; $("#countWords").textContent = (-days === 1 ? "day" : "days") + " since the move"; }
+    if (settings.fromAddress) $("#fromAddr").textContent = settings.fromAddress;
+    const inp = $("#newAddr");
+    if (document.activeElement !== inp) inp.value = settings.newAddress || "";
+    inp.disabled = state !== "ready";
+  }
+  function stats(list) {
+    const rel = items.filter((i) => i.list === list && applies(i));
+    return { total: rel.length, closed: rel.filter((i) => i.status === "done" || i.status === "na").length };
+  }
+  function renderProgress() {
+    $("#progress").innerHTML = Object.keys(LISTS).map((k) => {
+      const s = stats(k), pct = s.total ? Math.round((s.closed / s.total) * 100) : 0;
+      return `<div class="prog"><div class="top"><b>${LISTS[k]}</b><span>${s.closed}/${s.total}</span></div><div class="bar" role="progressbar" aria-label="${LISTS[k]} progress" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><i style="width:${pct}%"></i></div></div>`;
+    }).join("");
+    $("#tabs").innerHTML = Object.keys(LISTS).map((k) => { const s = stats(k); return `<button class="tab" role="tab" aria-selected="${ui.list === k}" data-act="tab" data-k="${k}">${LISTS[k]} <small>${s.closed}/${s.total}</small></button>`; }).join("");
+    $("#who").innerHTML = [["all", "Everyone"], ["Rog", "Rog"], ["Lu", "Lu"]].map(([k, l]) => `<button class="chip" aria-pressed="${ui.who === k}" data-act="who" data-k="${k}">${l}</button>`).join("");
+    $("#hideDone").checked = ui.hideDone;
+  }
+  function addsText(k) {
+    const yes = items.filter((i) => i.cond && i.cond.q === k && i.cond.is === "yes").length;
+    const no = items.filter((i) => i.cond && i.cond.q === k && i.cond.is === "no").length;
+    return [yes ? `Yes adds ${yes}` : "", no ? `No adds ${no}` : ""].filter(Boolean).join(" · ");
+  }
+  function renderQuestions() {
+    const a = answers(), left = QUESTIONS.filter((q) => !a[q.k]).length;
+    const showAll = ui.qsOpen === null ? left > 0 : ui.qsOpen;
+    const dis = state !== "ready" ? "disabled" : "";
+    const head = `<div class="qs-head"><div><h2>${left ? `${left} question${left === 1 ? "" : "s"} shape the lists` : "All questions answered"}</h2><p>Each answer adds or removes the jobs that depend on it.</p></div>${left === 0 || ui.qsOpen ? `<button class="linkbtn" data-act="qs">${showAll ? "Hide answers" : "Review answers"}</button>` : ""}</div>`;
+    if (!showAll) { $("#qs").innerHTML = head; return; }
+    $("#qs").innerHTML = head + QUESTIONS.map((q) => {
+      const v = a[q.k] || "", why = [q.why, addsText(q.k)].filter(Boolean).join(" ");
+      return `<div class="q"><p>${esc(q.q)}</p><div class="seg" role="group" aria-label="${esc(q.q)}">
+        <button type="button" aria-pressed="${v === "yes"}" data-act="ans" data-k="${q.k}" data-v="yes" ${dis}>Yes</button>
+        <button type="button" aria-pressed="${v === "no"}" data-act="ans" data-k="${q.k}" data-v="no" ${dis}>No</button></div>
+        ${why ? `<span class="why">${esc(why)}</span>` : ""}</div>`;
+    }).join("");
+  }
+
+  const tick = '<svg viewBox="0 0 16 16" fill="none" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3.2 3L13 4.5"/></svg>';
+  const safeUrl = (u) => (typeof u === "string" && /^https:\/\//.test(u) ? u : "");
+  function itemHTML(it) {
+    const done = it.status === "done", na = it.status === "na", closed = done || na, isOpen = open.has(it.id);
+    const owner = ["Rog", "Lu", "Both"].includes(it.owner) ? it.owner : "Both";
+    let dueTxt = "", dueCls = "";
+    const d = pd(it.due);
+    if (d && !closed) {
+      const diff = Math.round((d - today()) / DAY);
+      dueTxt = diff < 0 ? `${-diff}d overdue` : diff === 0 ? "Due today" : `by ${fmt(d)}`;
+      dueCls = diff < 0 ? "is-late" : diff <= 3 ? "is-soon" : "";
+    }
+    let closedLine = "";
+    if (closed) {
+      const who = it.closedBy === "Rog" || it.closedBy === "Lu" ? it.closedBy : "";
+      const when = it.closedAt ? new Date(it.closedAt).toLocaleDateString("en-AU", { day: "numeric", month: "short" }) : "";
+      closedLine = `<span class="closed-by">${na ? "Skipped" : "Done"}${who ? " by " + who : ""}${when ? " · " + esc(when) : ""}</span>`;
+    }
+    const dis = state !== "ready" || busy.has(it.id) ? "disabled" : "";
+    const links = [];
+    if (isOpen) {
+      const e = safeUrl(it.email), l = safeUrl(it.link);
+      if (e) links.push(`<a href="${esc(e)}" target="_blank" rel="noopener">Open the email</a>`);
+      if (l) links.push(`<a href="${esc(l)}" target="_blank" rel="noopener">${esc(it.linkLabel || "Official page")}</a>`);
+    }
+    return `<li class="item ${done ? "is-done" : ""} ${na ? "is-na" : ""}" data-id="${esc(it.id)}">
+      <button class="check" role="checkbox" aria-checked="${done}" aria-label="${done ? "Untick" : "Tick off"} ${esc(it.name)}" data-act="toggle" ${dis}>${tick}</button>
+      <div class="body">
+        <span class="name">${esc(it.name)}</span>
+        ${it.detail ? `<p class="detail">${esc(it.detail)}</p>` : ""}
+        <div class="meta">
+          <span class="who who-${owner}">${owner}</span>
+          ${dueTxt ? `<span class="due ${dueCls}">${dueTxt}</span>` : ""}
+          ${it.legal && !closed ? '<span class="tag tag-legal">Legal deadline</span>' : ""}
+          ${it.priority === "high" && !closed && !it.legal ? '<span class="tag tag-pri">Priority</span>' : ""}
+          ${it.source === "inbox" ? '<span class="tag">From inbox</span>' : ""}
+          ${it.group ? `<span class="grp">${esc(it.group)}</span>` : ""}
+          ${closedLine}
+          <button class="more" data-act="more" aria-expanded="${isOpen}">${isOpen ? "Less" : "Details"}</button>
+        </div>
+        ${isOpen ? `<div class="more-panel">
+          ${it.how ? `<p>${esc(it.how)}</p>` : ""}
+          ${it.ref ? `<span class="ref">${esc(it.ref)}</span>` : ""}
+          ${links.length ? `<div class="links">${links.join("")}</div>` : ""}
+          <div class="actions">
+            ${closed ? `<button class="btn" data-act="reopen" ${dis}>Put back on the list</button>` : `<button class="btn" data-act="skip" ${dis}>Doesn't apply to us</button>`}
+            ${it.source === "added" ? `<button class="btn btn-danger" data-act="remove" ${dis}>Remove</button>` : ""}
+          </div></div>` : ""}
+      </div></li>`;
+  }
+  function renderLists() {
+    const host = $("#lists");
+    if (state === "loading") return;
+    if (state === "error") { host.innerHTML = `<div class="empty"><b>${lockedMsg ? "The checklists are private" : "Can't reach the lists"}</b>${esc(lockedMsg || "Check your connection and reload the page.")}</div>`; return; }
+    const mine = items.filter((i) => i.list === ui.list && applies(i) && forWho(i));
+    if (!items.length) { host.innerHTML = `<div class="empty"><b>No jobs yet</b>Add the first one with the form below.</div>`; return; }
+    if (!mine.length) { host.innerHTML = `<div class="empty"><b>Nothing here for ${ui.who === "all" ? "anyone" : esc(ui.who)}</b>Switch to Everyone, or add a job below.</div>`; return; }
+    const groups = {};
+    for (const it of mine) { const b = bucketOf(it); (groups[b] = groups[b] || []).push(it); }
+    const m = moveDate();
+    const ranges = { moveday: fmt(m), fortnight: fmt(new Date(+m + DAY)) + " – " + fmt(new Date(+m + 14 * DAY)) };
+    let html = "";
+    for (const [k, label] of BUCKETS) {
+      const list = groups[k]; if (!list) continue;
+      if (k === "closed" && ui.hideDone) continue;
+      list.sort((a, b) => (a.due || "9999").localeCompare(b.due || "9999") || (a.order || 999) - (b.order || 999));
+      html += `<section class="bucket is-${k}"><div class="bucket-head"><h3>${label}</h3><span>${ranges[k] ? ranges[k] + " · " : ""}${list.length}</span></div><ul class="items">${list.map(itemHTML).join("")}</ul></section>`;
+    }
+    if (!html) html = `<div class="empty"><b>All done here</b>Untick “Hide done” to see what's been finished.</div>`;
+    host.innerHTML = `<div style="display:flex;flex-direction:column;gap:22px">${html}</div>`;
+  }
+  function render() { renderHeader(); renderProgress(); renderQuestions(); renderLists(); }
+
+  async function load() {
+    try {
+      const s = await api("/state");
+      items = Object.entries(s.items || {}).map(([id, d]) => Object.assign({ id }, d));
+      settings = Object.assign({ answers: {} }, (s.meta || {}).settings || {});
+      state = "ready";
+      lockedMsg = "";
+    } catch (e) {
+      if (e.status === 403) { lockedMsg = e.message; state = "error"; }
+      else if (state === "loading") state = "error";
+    }
+    render();
+  }
+  async function write(id, fn) {
+    if (state !== "ready" || busy.has(id)) return;
+    busy.add(id); renderLists();
+    try { await fn(); await load(); }
+    catch (e) { toast("That didn't save. Check your connection and try again."); }
+    finally { busy.delete(id); render(); }
+  }
+  const closeFields = (status) => ({ status, closedBy: status === "todo" ? null : me(), closedAt: status === "todo" ? null : new Date().toISOString() });
+  function applyLocal(id, f) { const it = items.find((i) => i.id === id); if (it) Object.assign(it, f); }
+
+  document.addEventListener("click", (ev) => {
+    const b = ev.target.closest("[data-act]"); if (!b) return;
+    const act = b.dataset.act, li = b.closest(".item"), id = li && li.dataset.id;
+    const it = id && items.find((i) => i.id === id);
+    if (act === "tab") { ui.list = b.dataset.k; saveUi(); render(); return; }
+    if (act === "who") { ui.who = b.dataset.k; saveUi(); render(); return; }
+    if (act === "qs") { const left = QUESTIONS.filter((q) => !answers()[q.k]).length; const cur = ui.qsOpen === null ? left > 0 : ui.qsOpen; ui.qsOpen = !cur; renderQuestions(); return; }
+    if (act === "more" && it) { open.has(id) ? open.delete(id) : open.add(id); renderLists(); return; }
+    const set = (status) => { const f = closeFields(status); applyLocal(id, f); write(id, () => patchItem(id, f)); };
+    if (act === "toggle" && it) { set(it.status === "done" ? "todo" : "done"); return; }
+    if (act === "skip" && it) { set("na"); return; }
+    if (act === "reopen" && it) { set("todo"); return; }
+    if (act === "remove" && it && it.source === "added") { open.delete(id); write(id, () => api("/doc/items/" + encodeURIComponent(id), "DELETE")); return; }
+    if (act === "ans") {
+      const k = b.dataset.k, v = b.dataset.v;
+      if (ui.qsOpen === null) ui.qsOpen = true;
+      const nextV = answers()[k] === v ? null : v;
+      settings.answers = Object.assign({}, answers(), { [k]: nextV });
+      write("meta-settings", () => patchSettings({ answers: { [k]: nextV } }));
+    }
+  });
+  $("#hideDone").addEventListener("change", (e) => { ui.hideDone = e.target.checked; saveUi(); renderLists(); });
+
+  let addrTimer;
+  function saveAddr() {
+    const v = $("#newAddr").value.trim();
+    if (state !== "ready" || v === (settings.newAddress || "")) return;
+    settings.newAddress = v;
+    write("meta-settings", async () => {
+      await patchSettings({ newAddress: v });
+      $("#addrSaved").textContent = v ? "Saved for both of you" : "Cleared";
+      setTimeout(() => { $("#addrSaved").textContent = ""; }, 2500);
+    });
+  }
+  $("#newAddr").addEventListener("change", saveAddr);
+  $("#newAddr").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); e.target.blur(); } });
+  $("#newAddr").addEventListener("blur", () => { clearTimeout(addrTimer); addrTimer = setTimeout(saveAddr, 50); });
+
+  $("#addForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const name = $("#addName").value.trim(); if (!name) return;
+    const doc = { list: ui.list, group: "Added", name, detail: "", how: "", owner: $("#addOwner").value, due: $("#addDue").value || null, priority: "normal", source: "added", status: "todo", order: 999, cond: null, legal: false, closedBy: null, closedAt: null };
+    write("add", async () => { await api("/doc/items", "POST", doc); $("#addName").value = ""; $("#addDue").value = ""; toast("Added to " + LISTS[ui.list]); });
+  });
+
+  render();
+  load();
+  setInterval(() => { if (!document.hidden && !busy.size && document.activeElement !== $("#newAddr")) load(); }, 5000);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) load(); });
+})();
+</script>
+</body>
+</html>

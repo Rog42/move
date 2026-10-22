@@ -1,0 +1,14 @@
+name = "move"
+pages_build_output_dir = "public"
+compatibility_date = "2024-09-23"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "move"
+database_id = "dfe4fa59-944a-435f-9dbc-47a78cbc1702"
+
+[vars]
+# The checklists (/api/lists/*) stay locked until one of these is set. See README step 3.
+# ACCESS_TEAM_DOMAIN = "rog42"      # your Zero Trust team name (before .cloudflareaccess.com)
+# ACCESS_AUD = ""                   # optional: the Access application's AUD tag
+# LISTS_OPEN = "1"                  # opens the checklists to anyone with the link

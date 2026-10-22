@@ -1,0 +1,645 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Move Boxes</title>
+<meta name="theme-color" content="#F1F4F2" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0F1412" media="(prefers-color-scheme: dark)">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap">
+<style>
+/* One column, phone first: counts, scan, new label, then every box grouped by its Savoy room */
+:root {
+  --bg: #F1F4F2; --surface: #FFFFFF; --ink: #17201C; --muted: #586560; --line: #D7DED9;
+  --accent: #0D6A56; --accent-soft: #DEEEE8; --on-accent: #FFFFFF;
+  --tape: #A86F00; --tape-soft: #FBEFD3; --late: #B3261E; --late-soft: #FBE3E0;
+  --f-body: "Instrument Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --f-mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+  --r: 12px;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #0F1412; --surface: #161D1A; --ink: #E3E9E5; --muted: #9AA8A1; --line: #29332F;
+    --accent: #4CC1A2; --accent-soft: #15302A; --on-accent: #0F1412;
+    --tape: #EDB441; --tape-soft: #33290F; --late: #F2877D; --late-soft: #3B1C1A; color-scheme: dark; }
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 var(--f-body); -webkit-font-smoothing: antialiased; padding-bottom: calc(40px + env(safe-area-inset-bottom, 0px)); }
+button, input, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+h1, h2, h3 { margin: 0; text-wrap: balance; }
+.wrap { max-width: 720px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.main { display: flex; flex-direction: column; gap: 16px; padding-block: 16px; }
+
+.top { position: sticky; top: 0; z-index: 10; background: var(--bg); padding-top: env(safe-area-inset-top, 0px); border-bottom: 1px solid var(--line); }
+.top-in { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-block: 10px; }
+.brand { display: flex; flex-direction: column; text-decoration: none; color: var(--ink); line-height: 1.2; }
+.brand b { font-size: 18px; letter-spacing: -.01em; }
+.brand span { font-size: 12.5px; color: var(--muted); }
+.navlink { color: var(--accent); font-weight: 600; font-size: 14px; text-underline-offset: 3px; }
+
+.counts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.count { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; display: flex; flex-direction: column; gap: 0; }
+.count b { font-family: var(--f-mono); font-size: 22px; font-weight: 500; font-variant-numeric: tabular-nums; line-height: 1.2; }
+.count span { font-size: 11.5px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+.card h2 { font-size: 16px; font-weight: 700; }
+.hint { margin: 0; font-size: 13.5px; color: var(--muted); }
+.btn { border: 1px solid var(--line); background: var(--surface); border-radius: 10px; padding: 9px 14px; font-weight: 600; font-size: 14px; }
+.btn:disabled { opacity: .5; cursor: default; }
+.btn-primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.btn-big { padding: 16px; font-size: 17px; border-radius: 12px; width: 100%; }
+.btn-danger { color: var(--late); }
+.linkbtn { background: none; border: 0; padding: 0; color: var(--accent); font-weight: 600; font-size: 13px; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.numform { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+input[type="text"], input[inputmode], select { width: 100%; min-width: 0; padding: 11px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); font-size: 16px; }
+#numIn { font-family: var(--f-mono); letter-spacing: .08em; }
+#numIn::placeholder { font-family: var(--f-body); letter-spacing: 0; color: var(--muted); }
+.fld { display: flex; flex-direction: column; gap: 5px; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.fld input, .fld select { text-transform: none; letter-spacing: 0; color: var(--ink); font-weight: 500; }
+
+.log { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 13.5px; }
+.log li { display: flex; gap: 8px; align-items: baseline; color: var(--muted); }
+.log b { font-family: var(--f-mono); color: var(--ink); font-weight: 500; }
+.log .linkbtn { margin-left: auto; }
+
+.maker-grid { display: grid; grid-template-columns: 1fr minmax(0, 260px); gap: 16px; align-items: start; }
+@media (max-width: 600px) { .maker-grid { grid-template-columns: 1fr; } }
+.maker-form { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.preview { margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.preview canvas { width: 100%; height: auto; border-radius: 6px; border: 1px solid var(--line); background: #FFFFFF; }
+.preview select { padding: 7px 8px; font-size: 13.5px; }
+.opts { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; }
+.copies { display: flex; align-items: center; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
+.copies button { border: 0; background: none; width: 36px; height: 34px; font-size: 18px; font-weight: 600; color: var(--accent); }
+.copies button:disabled { color: var(--muted); opacity: .5; cursor: default; }
+.copies output { min-width: 4.6em; text-align: center; font-size: 13.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+.filters { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip { border: 1px solid var(--line); background: var(--surface); border-radius: 99px; padding: 5px 12px; font-size: 13px; font-weight: 500; color: var(--muted); }
+.chip[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.groups { display: flex; flex-direction: column; gap: 16px; }
+.g-head { display: flex; align-items: baseline; gap: 8px; padding-inline: 2px; margin-bottom: 6px; }
+.g-head h3 { font-size: 14px; font-weight: 700; }
+.g-head span { margin-left: auto; font-family: var(--f-mono); font-size: 12px; color: var(--muted); }
+.sw { width: 11px; height: 11px; border-radius: 3px; background: var(--sw, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink) 30%, transparent); flex: none; align-self: center; }
+ul.boxes { list-style: none; margin: 0; padding: 0; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
+.box { display: grid; grid-template-columns: 46px 1fr auto; gap: 10px; align-items: center; padding: 11px 12px; width: 100%; border: 0; background: none; text-align: left; }
+li + li .box { border-top: 1px solid var(--line); }
+.box:hover { background: color-mix(in srgb, var(--accent-soft) 50%, transparent); }
+.box.is-hot { background: var(--accent-soft); }
+.bn { font-family: var(--f-mono); font-weight: 500; font-variant-numeric: tabular-nums; }
+.bc { min-width: 0; overflow-wrap: anywhere; }
+.st { font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; padding: 3px 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--muted); white-space: nowrap; }
+.st-packed { background: var(--tape-soft); color: var(--tape); border-color: transparent; }
+.st-loaded { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
+.st-inroom { background: var(--accent); color: var(--on-accent); border-color: transparent; }
+.empty { text-align: center; color: var(--muted); padding: 28px 16px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); }
+.empty b { color: var(--ink); display: block; margin-bottom: 4px; }
+
+/* Camera */
+.cam { position: fixed; inset: 0; z-index: 50; background: #000; display: flex; flex-direction: column; }
+.cam video { flex: 1; width: 100%; min-height: 0; object-fit: cover; }
+.reticle { position: absolute; left: 50%; top: 42%; width: min(70vw, 340px); aspect-ratio: 1; transform: translate(-50%, -50%); border: 3px solid rgba(255,255,255,.85); border-radius: 18px; box-shadow: 0 0 0 100vmax rgba(0,0,0,.35); pointer-events: none; }
+.cam-bar { position: absolute; left: 0; right: 0; bottom: 0; padding: 16px max(16px, env(safe-area-inset-left, 0px)) calc(16px + env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; gap: 10px; background: linear-gradient(transparent, rgba(0,0,0,.75) 30%); }
+.cam-msg { color: #FFFFFF; font-size: 17px; font-weight: 600; text-align: center; min-height: 2.6em; display: flex; align-items: center; justify-content: center; border-radius: 12px; padding: 8px 12px; }
+.cam-msg.is-moved { background: #0D6A56; }
+.cam-msg.is-warn { background: #A86F00; }
+.cam-msg.is-bad { background: #B3261E; }
+.cam-bar .btn { background: #FFFFFF; color: #17201C; border-color: #FFFFFF; padding: 14px; font-size: 16px; }
+.cam-top { position: absolute; top: 0; left: 0; right: 0; padding: calc(12px + env(safe-area-inset-top, 0px)) 16px 12px; color: #FFFFFF; font-size: 14px; text-align: center; background: linear-gradient(rgba(0,0,0,.6), transparent); }
+
+/* Box sheet */
+dialog.sheet { border: 0; padding: 0; border-radius: 16px 16px 0 0; width: 100%; max-width: 560px; margin: auto auto 0; background: var(--surface); color: var(--ink); }
+@media (min-width: 640px) { dialog.sheet { border-radius: 16px; margin: auto; } }
+dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
+.sheet-in { padding: 18px max(18px, env(safe-area-inset-left, 0px)) calc(18px + env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; gap: 12px; }
+.sheet-head { display: flex; justify-content: space-between; align-items: baseline; }
+.sheet-head b { font-family: var(--f-mono); font-size: 24px; }
+.seg { display: grid; grid-template-columns: repeat(4, 1fr); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.seg button { border: 0; background: var(--bg); padding: 10px 4px; font-weight: 600; font-size: 13.5px; color: var(--muted); }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+
+.toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(18px + env(safe-area-inset-bottom, 0px)); background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 10px; font-size: 14px; max-width: calc(100% - 32px); z-index: 60; }
+[hidden] { display: none !important; }
+#printArea { display: none; }
+@media print {
+  html, body { margin: 0 !important; padding: 0 !important; background: #FFFFFF !important; }
+  body > *:not(#printArea) { display: none !important; }
+  #printArea { display: block !important; }
+  #printArea img { display: block; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto !important; } }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap top-in">
+    <a class="brand" href="/"><b>Move boxes</b><span>133 Oratava → 12 Savoy Court · Sat 7 Nov</span></a>
+    <a class="navlink" href="/lists">Checklists</a>
+  </div>
+</header>
+
+<main class="wrap main">
+  <section class="counts" id="counts" aria-label="Boxes by stage"></section>
+
+  <section class="card" aria-labelledby="scanH">
+    <h2 id="scanH">Scan</h2>
+    <button class="btn btn-primary btn-big" type="button" id="scanBtn">Scan boxes</button>
+    <form class="numform" id="numForm" autocomplete="off">
+      <input id="numIn" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="Or type a box number" aria-label="Box number">
+      <button class="btn" type="submit">Scan</button>
+    </form>
+    <p class="hint">Each scan moves a box one step: first packed, then loaded, then in room.</p>
+    <ul class="log" id="log" aria-live="polite"></ul>
+  </section>
+
+  <section class="card" aria-labelledby="makeH">
+    <h2 id="makeH">New box label</h2>
+    <div class="maker-grid">
+      <div class="maker-form">
+        <label class="fld">What's in it
+          <input type="text" id="lbCat" list="catList" maxlength="40" placeholder="e.g. Kitchenware" autocomplete="off">
+        </label>
+        <datalist id="catList"></datalist>
+        <label class="fld">Goes to
+          <select id="lbDest"></select>
+        </label>
+        <button class="btn btn-primary btn-big" type="button" id="lbCreate">Create label</button>
+        <p class="hint" id="lbHint">Numbers come from one shared counter, so two people can never get the same one.</p>
+      </div>
+      <figure class="preview">
+        <canvas id="lbCanvas" width="800" height="1200" role="img" aria-label="Label preview"></canvas>
+        <div class="opts">
+          <select id="lbSize" aria-label="Label size">
+            <option value="100x150">4 × 6 in (M6)</option>
+            <option value="48x30">Mini printer, 48 mm roll</option>
+            <option value="50x30">50 × 30 mm</option>
+            <option value="40x30">40 × 30 mm</option>
+            <option value="50x20">50 × 20 mm</option>
+          </select>
+          <div class="copies" role="group" aria-label="Labels per box">
+            <button type="button" id="cpMinus" aria-label="Fewer labels per box">−</button>
+            <output id="cpN" aria-live="polite">2 sides</output>
+            <button type="button" id="cpPlus" aria-label="More labels per box">+</button>
+          </div>
+        </div>
+        <div class="row">
+          <button class="btn" type="button" id="lbPrint" disabled>Print</button>
+          <button class="btn" type="button" id="lbShare" disabled>Share image</button>
+          <button class="btn" type="button" id="lbSave" disabled>Save image</button>
+        </div>
+      </figure>
+    </div>
+  </section>
+
+  <section aria-labelledby="allH" style="display:flex;flex-direction:column;gap:12px">
+    <div class="row" style="justify-content:space-between"><h2 id="allH" style="font-size:16px">All boxes</h2></div>
+    <div class="filters" id="filters" role="group" aria-label="Show boxes"></div>
+    <div id="register"><div class="empty"><b>Loading boxes</b></div></div>
+  </section>
+</main>
+
+<div class="cam" id="cam" hidden>
+  <video id="video" playsinline muted></video>
+  <div class="reticle" aria-hidden="true"></div>
+  <div class="cam-top" id="camTop">Point at a box label</div>
+  <div class="cam-bar">
+    <div class="cam-msg" id="camMsg" aria-live="assertive">Hold the QR code inside the square</div>
+    <button class="btn" type="button" id="camClose">Done scanning</button>
+  </div>
+</div>
+
+<dialog class="sheet" id="sheet" aria-labelledby="sheetNum">
+  <div class="sheet-in">
+    <div class="sheet-head"><b id="sheetNum">000</b><button class="linkbtn" type="button" id="sheetClose">Close</button></div>
+    <div class="seg" id="sheetSeg" role="group" aria-label="Stage"></div>
+    <label class="fld">What's in it <input type="text" id="shCat" maxlength="40" list="catList" autocomplete="off"></label>
+    <label class="fld">Goes to <select id="shDest"></select></label>
+    <div class="row">
+      <button class="btn btn-primary" type="button" id="shSave">Save changes</button>
+      <button class="btn" type="button" id="shLabel">Show label</button>
+      <button class="btn btn-danger" type="button" id="shRemove" style="margin-left:auto">Remove</button>
+    </div>
+  </div>
+</dialog>
+
+<div id="printArea"></div>
+<div class="toast" id="toast" hidden></div>
+
+<script src="/vendor/qrcode-generator-1.4.4.js"></script>
+<script>
+(function () {
+  "use strict";
+  const LOCAL = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
+  const BASE = LOCAL ? location.origin : "https://move.rog42.net";
+  const STEPS = [["labelled", "Labelled"], ["packed", "Packed"], ["loaded", "Loaded"], ["inroom", "In room"]];
+  const STEP_NAME = Object.fromEntries(STEPS);
+  const SIZES = { "100x150": [100, 150], "48x30": [48, 30], "50x30": [50, 30], "40x30": [40, 30], "50x20": [50, 20] };
+  const DEFAULT_CATS = ["Kitchenware", "Pantry", "Crockery", "Glassware", "Books", "Linen", "Clothes", "Shoes", "Toiletries", "Office", "Electronics", "Cables", "Music", "Sheet music", "Craft", "Fabric", "Tools", "Garden", "Decor", "Photos", "Documents", "Toys"];
+
+  const $ = (s) => document.querySelector(s);
+  const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const num = (v) => { const n = Number(v); return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0; };
+  const pad3 = (n) => String(num(n)).padStart(3, "0");
+  const plural = (n, a, b) => `${n} ${n === 1 ? a : b}`;
+
+  let rooms = {}, boxes = {}, loaded = false;
+  let current = null, filter = "all", hot = null, log = [], sheetId = null;
+  let size = "100x150";
+  try { size = localStorage.getItem("labelSize") || size; } catch (e) {}
+  if (!SIZES[size]) size = "100x150";
+  const MAX_COPIES = 6;
+  let copies = 2;
+  try { copies = Math.min(MAX_COPIES, Math.max(1, num(localStorage.getItem("labelCopies")) || 2)); } catch (e) {}
+
+  let toastT;
+  function toast(m) { const t = $("#toast"); t.textContent = m; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => (t.hidden = true), 3200); }
+
+  async function api(path, opts) {
+    const r = await fetch(path, Object.assign({ headers: { "content-type": "application/json" }, cache: "no-store" }, opts || {}));
+    let body = null; try { body = await r.json(); } catch (e) {}
+    if (!r.ok) { const err = new Error((body && body.error) || ("HTTP " + r.status)); err.status = r.status; throw err; }
+    return body;
+  }
+
+  const savoyRooms = () => Object.entries(rooms).map(([id, r]) => Object.assign({ id }, r)).filter((r) => r.list === "unpack" && r.kind !== "prep").sort((a, b) => (a.order || 0) - (b.order || 0));
+  const roomName = (id) => (rooms[id] ? String(rooms[id].name) : "");
+  const labelRoom = (id) => roomName(id).replace(/\s*\((check|TBC)\)\s*/i, "").trim();
+  const hexOf = (c) => (c && /^#[0-9a-fA-F]{6}$/.test(c.hex || "") ? c.hex : "");
+  const list = () => Object.entries(boxes).map(([id, b]) => Object.assign({ id }, b)).sort((a, b) => num(a.n) - num(b.n));
+  const statusOf = (b) => (STEP_NAME[b.status] ? b.status : b.arrived === true ? "inroom" : "labelled");
+  function idFrom(text) {
+    const s = String(text || "").trim();
+    const m = s.match(/\/b\/(\d{1,4})\b/) || s.match(/#b(\d{1,4})\b/i) || s.match(/^b?(\d{1,4})$/i);
+    return m ? "b" + pad3(Number(m[1])) : null;
+  }
+
+  // ---------- Data ----------
+  async function refresh() {
+    try {
+      const s = await api("/api/state");
+      rooms = s.rooms || {}; boxes = s.boxes || {}; loaded = true;
+      render();
+    } catch (e) { if (!loaded) $("#register").innerHTML = `<div class="empty"><b>Can't reach the box list</b>${esc(e.message)}</div>`; }
+  }
+  setInterval(() => { if (!document.hidden && $("#cam").hidden) refresh(); }, 4000);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
+
+  // ---------- Render ----------
+  function render() {
+    const all = list();
+    $("#counts").innerHTML = STEPS.map(([k, l]) => `<div class="count"><b>${all.filter((b) => statusOf(b) === k).length}</b><span>${l}</span></div>`).join("");
+    const sel = $("#lbDest");
+    if (document.activeElement !== sel) {
+      const cur = sel.value;
+      sel.innerHTML = `<option value="">Choose a room</option>` + savoyRooms().map((r) => `<option value="${esc(r.id)}">${esc(r.name)}</option>`).join("");
+      if (cur && rooms[cur]) sel.value = cur;
+    }
+    const cats = [...new Set(all.map((b) => b.cat).filter(Boolean).concat(DEFAULT_CATS))];
+    $("#catList").innerHTML = cats.map((c) => `<option value="${esc(c)}"></option>`).join("");
+    const next = all.reduce((m, b) => Math.max(m, num(b.n)), 0) + 1;
+    $("#lbCreate").textContent = `Create box ${pad3(next)}`;
+    renderLog(); renderFilters(); renderRegister(); drawPreview();
+  }
+
+  function renderLog() {
+    $("#log").innerHTML = log.slice(0, 5).map((e, i) => `<li><b>${pad3(e.n)}</b> ${esc(e.cat || "")} → ${esc(e.note)}${i === 0 && e.undo ? ` <button class="linkbtn" type="button" data-undo="1">Undo</button>` : ""}</li>`).join("");
+  }
+  function renderFilters() {
+    const opts = [["all", "All"]].concat(STEPS);
+    $("#filters").innerHTML = opts.map(([k, l]) => `<button class="chip" type="button" data-filter="${k}" aria-pressed="${filter === k}">${l}</button>`).join("");
+  }
+  function renderRegister() {
+    if (!loaded) return;
+    const all = list();
+    if (!all.length) { $("#register").innerHTML = `<div class="empty"><b>No boxes yet</b>Create the first label above. Numbers start at 001 and are never reused.</div>`; return; }
+    const shown = filter === "all" ? all : all.filter((b) => statusOf(b) === filter);
+    if (!shown.length) { $("#register").innerHTML = `<div class="empty"><b>No ${esc(STEP_NAME[filter].toLowerCase())} boxes</b>Pick another filter to see the rest.</div>`; return; }
+    const groups = savoyRooms().map((r) => ({ r, rows: shown.filter((b) => b.dest === r.id) })).filter((g) => g.rows.length);
+    const loose = shown.filter((b) => !b.dest || !rooms[b.dest]);
+    if (loose.length) groups.push({ r: null, rows: loose });
+    $("#register").innerHTML = `<div class="groups">${groups.map((g) => {
+      const inr = g.rows.filter((b) => statusOf(b) === "inroom").length;
+      return `<section><div class="g-head"><i class="sw" style="--sw:${g.r ? hexOf(g.r.colour) || "transparent" : "transparent"}"></i><h3>${g.r ? esc(g.r.name) : "No room yet"}</h3><span>${plural(g.rows.length, "box", "boxes")} · ${inr} in room</span></div>
+        <ul class="boxes">${g.rows.map((b) => { const st = statusOf(b); return `<li><button class="box ${b.id === hot ? "is-hot" : ""}" type="button" data-box="${esc(b.id)}"><span class="bn">${pad3(b.n)}</span><span class="bc">${esc(b.cat || "")}</span><span class="st st-${st}">${STEP_NAME[st]}</span></button></li>`; }).join("")}</ul></section>`;
+    }).join("")}</div>`;
+  }
+
+  // ---------- Label drawing (black on white at 8 dots per mm) ----------
+  const LFONT = '"Instrument Sans", Arial, Helvetica, sans-serif';
+  function fitFont(c, txt, maxW, maxPx) {
+    let fs = Math.floor(maxPx);
+    for (; fs > 10; fs -= 2) { c.font = `700 ${fs}px ${LFONT}`; if (c.measureText(txt).width <= maxW) break; }
+    return fs;
+  }
+  function qrMatrix(text) {
+    try { const q = window.qrcode(0, "M"); q.addData(text); q.make(); return { n: q.getModuleCount(), dark: (r, c) => q.isDark(r, c) }; }
+    catch (e) { return null; }
+  }
+  function drawQR(c, m, x, y, sz, ink) {
+    const quiet = 2, cell = Math.floor(sz / (m.n + quiet * 2));
+    if (cell < 2) return;
+    const total = cell * (m.n + quiet * 2), ox = x + Math.floor((sz - total) / 2) + cell * quiet, oy = y + Math.floor((sz - total) / 2) + cell * quiet;
+    c.fillStyle = ink;
+    for (let r = 0; r < m.n; r++) for (let k = 0; k < m.n; k++) if (m.dark(r, k)) c.fillRect(ox + k * cell, oy + r * cell, cell, cell);
+  }
+  function drawLabel(cv, box, ghost) {
+    const [wmm, hmm] = SIZES[size];
+    const W = wmm * 8, H = hmm * 8, portrait = H > W;
+    cv.width = W; cv.height = H;
+    const c = cv.getContext("2d");
+    c.fillStyle = "#FFFFFF"; c.fillRect(0, 0, W, H);
+    const ink = ghost ? "#9A9A9A" : "#000000";
+    const numTxt = box && box.n ? pad3(box.n) : "000";
+    const cat = (box && box.cat ? String(box.cat) : "Contents").toUpperCase();
+    const dest = box && box.dest ? labelRoom(box.dest).toUpperCase() : "ROOM?";
+    const qr = box && box.n ? qrMatrix(BASE + "/b/" + pad3(box.n)) : null;
+    c.textBaseline = "top";
+    if (portrait) {
+      const pad = Math.round(W * 0.06), barH = Math.round(W * 0.2);
+      c.fillStyle = ink;
+      const fsN = fitFont(c, numTxt, W - 2 * pad, W * 0.36);
+      c.fillText(numTxt, pad, pad);
+      let y = pad + Math.round(fsN * 0.95);
+      const fsC = fitFont(c, cat, W - 2 * pad, W * 0.11);
+      c.fillText(cat, pad, y);
+      y += Math.round(fsC * 1.25);
+      const avail = H - barH - y - pad, sz = Math.min(W - 2 * pad, avail);
+      if (qr && sz > 60) drawQR(c, qr, Math.round((W - sz) / 2), y + Math.round((avail - sz) / 2), sz, ink);
+      c.fillStyle = ink; c.fillRect(0, H - barH, W, barH);
+      c.fillStyle = "#FFFFFF";
+      const d = "→ " + dest, fsD = fitFont(c, d, W - 2 * pad, barH * 0.62);
+      c.fillText(d, pad, H - barH + Math.round((barH - fsD) / 2));
+      return;
+    }
+    const pad = Math.round(H * 0.07), barH = Math.round(H * 0.28);
+    const q = qr ? H - barH - Math.round(pad * 1.2) : 0, textW = W - 2 * pad - (q ? q + pad : 0);
+    c.fillStyle = ink;
+    const fsN = fitFont(c, numTxt, textW, H * 0.4);
+    c.fillText(numTxt, pad, Math.round(pad * 0.6));
+    const top = Math.round(pad * 0.6 + fsN * 0.92), bottom = H - barH - Math.round(pad * 0.5);
+    const fsC = fitFont(c, cat, textW, Math.max(12, Math.min(bottom - top, H * 0.16)));
+    c.fillText(cat, pad, top + Math.max(0, Math.round((bottom - top - fsC) / 2)));
+    if (q) drawQR(c, qr, W - pad - q, Math.round(pad * 0.4), q, ink);
+    c.fillStyle = ink; c.fillRect(0, H - barH, W, barH);
+    c.fillStyle = "#FFFFFF";
+    const d = "→ " + dest, fsD = fitFont(c, d, W - 2 * pad, barH * 0.7);
+    c.fillText(d, pad, H - barH + Math.round((barH - fsD) / 2));
+  }
+  function drawPreview() {
+    const cur = current && boxes[current] ? Object.assign({ id: current }, boxes[current]) : null;
+    if (cur) drawLabel($("#lbCanvas"), cur, false);
+    else {
+      const next = list().reduce((m, b) => Math.max(m, num(b.n)), 0) + 1;
+      drawLabel($("#lbCanvas"), { n: next, cat: $("#lbCat").value.trim(), dest: $("#lbDest").value }, true);
+    }
+    ["#lbPrint", "#lbShare", "#lbSave"].forEach((s) => ($(s).disabled = !cur));
+    $("#cpN").textContent = copies === 1 ? "1 side" : `${copies} sides`;
+    $("#cpMinus").disabled = copies <= 1; $("#cpPlus").disabled = copies >= MAX_COPIES;
+    $("#lbPrint").textContent = copies === 1 ? "Print" : `Print ${copies}`;
+    $("#lbHint").textContent = cur
+      ? `Box ${pad3(cur.n)} is ready.${copies > 1 ? ` Stick one on each of ${copies} sides; every copy scans as the same box.` : ""} Change the fields to start the next one.`
+      : "Numbers come from one shared counter, so two people can never get the same one.";
+  }
+  function setCopies(n) {
+    copies = Math.min(MAX_COPIES, Math.max(1, n));
+    try { localStorage.setItem("labelCopies", String(copies)); } catch (e) {}
+    drawPreview();
+  }
+  $("#cpMinus").addEventListener("click", () => setCopies(copies - 1));
+  $("#cpPlus").addEventListener("click", () => setCopies(copies + 1));
+
+  // For roll printers: every copy on one strip, with a dashed line to cut or tear along.
+  function stripCanvas() {
+    const src = $("#lbCanvas");
+    if (copies <= 1) return src;
+    const gap = 8 * 6, out = document.createElement("canvas");
+    out.width = src.width; out.height = src.height * copies + gap * (copies - 1);
+    const c = out.getContext("2d");
+    c.fillStyle = "#FFFFFF"; c.fillRect(0, 0, out.width, out.height);
+    c.strokeStyle = "#000000"; c.lineWidth = 2; c.setLineDash([16, 12]);
+    for (let i = 0; i < copies; i++) {
+      const y = i * (src.height + gap);
+      c.drawImage(src, 0, y);
+      if (i < copies - 1) { const m = y + src.height + gap / 2; c.beginPath(); c.moveTo(0, m); c.lineTo(out.width, m); c.stroke(); }
+    }
+    return out;
+  }
+
+  // ---------- Create / print / share ----------
+  $("#lbCat").addEventListener("input", () => { current = null; drawPreview(); });
+  $("#lbDest").addEventListener("change", () => { current = null; drawPreview(); });
+  $("#lbSize").value = size;
+  $("#lbSize").addEventListener("change", (e) => { size = e.target.value; try { localStorage.setItem("labelSize", size); } catch (err) {} drawPreview(); });
+  $("#lbCreate").addEventListener("click", async () => {
+    const cat = $("#lbCat").value.trim(), dest = $("#lbDest").value || null;
+    if (!cat) { toast("Say what's in the box first."); $("#lbCat").focus(); return; }
+    const btn = $("#lbCreate"); btn.disabled = true;
+    try {
+      const r = await api("/api/boxes", { method: "POST", body: JSON.stringify({ cat, dest }) });
+      boxes[r.id] = r.box; current = r.id; hot = r.id;
+      toast(`Box ${pad3(r.box.n)} created`);
+      render(); refresh();
+    } catch (e) { toast("Couldn't create the box: " + e.message); }
+    finally { btn.disabled = false; }
+  });
+  function canvasBlob() { return new Promise((res) => stripCanvas().toBlob(res, "image/png")); }
+  const fileName = (b) => `box-${pad3(b.n)}${copies > 1 ? "-x" + copies : ""}.png`;
+  $("#lbPrint").addEventListener("click", () => {
+    const [w, h] = SIZES[size];
+    const url = $("#lbCanvas").toDataURL("image/png");
+    let st = document.getElementById("pageSize");
+    if (!st) { st = document.createElement("style"); st.id = "pageSize"; document.head.appendChild(st); }
+    // One label per page, so the M6 feeds one die-cut 4x6 label for each copy.
+    st.textContent = `@media print { @page { size: ${w}mm ${h}mm; margin: 0; } #printArea img { width: ${w}mm; height: ${h}mm; break-after: page; page-break-after: always; } #printArea img:last-child { break-after: auto; page-break-after: auto; } }`;
+    $("#printArea").innerHTML = Array.from({ length: copies }, () => `<img src="${url}" alt="">`).join("");
+    setTimeout(() => window.print(), 50);
+  });
+  $("#lbShare").addEventListener("click", async () => {
+    const b = boxes[current]; if (!b) return;
+    const blob = await canvasBlob(); if (!blob) return;
+    const file = new File([blob], fileName(b), { type: "image/png" });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file], title: `Box ${pad3(b.n)}` }); } catch (e) { if (e && e.name !== "AbortError") toast("Sharing didn't work. Try Save image."); }
+    } else toast("This browser can't share images. Use Save image or Print.");
+  });
+  $("#lbSave").addEventListener("click", async () => {
+    const b = boxes[current]; if (!b) return;
+    const blob = await canvasBlob(); if (!blob) return;
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = fileName(b);
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  });
+
+  // ---------- Scanning ----------
+  let audio = null;
+  function beep(ok) {
+    try {
+      if (!audio) audio = new (window.AudioContext || window.webkitAudioContext)();
+      const o = audio.createOscillator(), g = audio.createGain();
+      o.frequency.value = ok ? 880 : 300; g.gain.value = 0.08;
+      o.connect(g); g.connect(audio.destination); o.start(); o.stop(audio.currentTime + (ok ? 0.12 : 0.25));
+    } catch (e) {}
+    try { navigator.vibrate && navigator.vibrate(ok ? 60 : [40, 60, 40]); } catch (e) {}
+  }
+  async function scan(id, how) {
+    const b = boxes[id];
+    try {
+      const r = await api("/api/scan/" + encodeURIComponent(id), { method: "POST" });
+      boxes[id] = r.box; hot = id;
+      let note, kind;
+      if (r.result === "moved") { note = STEP_NAME[r.to]; kind = "moved"; log.unshift({ id, n: r.box.n, cat: r.box.cat, note, from: r.from, undo: true }); }
+      else if (r.result === "recent") { note = `already scanned, still ${STEP_NAME[r.to].toLowerCase()}`; kind = "warn"; }
+      else { note = "already in its room"; kind = "warn"; }
+      if (kind !== "moved") log.unshift({ id, n: r.box.n, cat: r.box.cat, note, undo: false });
+      log = log.slice(0, 20);
+      render();
+      return { kind, text: `${pad3(r.box.n)} ${r.box.cat || ""} → ${note}` };
+    } catch (e) {
+      if (e.status === 404) return { kind: "bad", text: `Box ${id.replace(/^b/, "")} isn't in the list` };
+      return { kind: "bad", text: "Couldn't save that scan. Check the signal and try again." };
+    }
+  }
+  $("#log").addEventListener("click", async (e) => {
+    if (!e.target.closest("[data-undo]")) return;
+    const last = log[0]; if (!last || !last.undo) return;
+    try {
+      const r = await api("/api/boxes/" + last.id, { method: "PATCH", body: JSON.stringify({ status: last.from, resetScan: true }) });
+      boxes[last.id] = r.box; log.shift(); toast(`Box ${pad3(last.n)} back to ${STEP_NAME[last.from].toLowerCase()}`); render();
+    } catch (err) { toast("Couldn't undo that one."); }
+  });
+  $("#numForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const id = idFrom($("#numIn").value);
+    if (!id) { toast("Type a box number, like 14."); return; }
+    $("#numIn").value = "";
+    const r = await scan(id, "number");
+    toast(r.text);
+  });
+
+  // Live camera
+  let stream = null, running = false, detector = null, jsqr = null, lastSeen = { id: null, at: 0 };
+  const work = document.createElement("canvas");
+  function loadJsQR() {
+    if (window.jsQR) return Promise.resolve(window.jsQR);
+    return new Promise((res, rej) => { const s = document.createElement("script"); s.src = "/vendor/jsQR-1.4.0.js"; s.onload = () => res(window.jsQR); s.onerror = rej; document.head.appendChild(s); });
+  }
+  function camMsg(text, kind) { const m = $("#camMsg"); m.textContent = text; m.className = "cam-msg" + (kind ? " is-" + kind : ""); }
+  async function openCam() {
+    beep(true);
+    $("#cam").hidden = false; camMsg("Starting the camera…");
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
+    } catch (e) {
+      camMsg("The camera is blocked. Allow camera access for this site, or type box numbers instead.", "bad");
+      return;
+    }
+    const v = $("#video"); v.srcObject = stream; try { await v.play(); } catch (e) {}
+    detector = null;
+    if ("BarcodeDetector" in window) {
+      try { const f = await window.BarcodeDetector.getSupportedFormats(); if (f.includes("qr_code")) detector = new window.BarcodeDetector({ formats: ["qr_code"] }); } catch (e) {}
+    }
+    if (!detector) { try { jsqr = await loadJsQR(); } catch (e) { camMsg("The scanner didn't load. Type box numbers instead.", "bad"); return; } }
+    camMsg("Hold the QR code inside the square");
+    running = true; tick();
+  }
+  function closeCam() {
+    running = false;
+    if (stream) stream.getTracks().forEach((t) => t.stop());
+    stream = null; $("#cam").hidden = true; refresh();
+  }
+  async function tick() {
+    if (!running) return;
+    const v = $("#video");
+    let text = null;
+    try {
+      if (v.readyState >= 2) {
+        if (detector) { const codes = await detector.detect(v); if (codes && codes[0]) text = codes[0].rawValue; }
+        else if (jsqr) {
+          const k = Math.min(1, 720 / Math.max(v.videoWidth, v.videoHeight));
+          const w = Math.round(v.videoWidth * k), h = Math.round(v.videoHeight * k);
+          work.width = w; work.height = h;
+          const cx = work.getContext("2d", { willReadFrequently: true }); cx.drawImage(v, 0, 0, w, h);
+          const r = jsqr(cx.getImageData(0, 0, w, h).data, w, h, { inversionAttempts: "dontInvert" });
+          if (r) text = r.data;
+        }
+      }
+    } catch (e) {}
+    if (text) await handleCode(text);
+    setTimeout(tick, 160);
+  }
+  async function handleCode(text) {
+    const id = idFrom(text), now = Date.now();
+    if (!id) { if (now - lastSeen.at > 2500) { camMsg("That QR code isn't a box label", "bad"); beep(false); lastSeen = { id: "x", at: now }; } return; }
+    if (lastSeen.id === id && now - lastSeen.at < 5000) { lastSeen.at = now; return; }
+    lastSeen = { id, at: now };
+    const r = await scan(id, "camera");
+    camMsg(r.text, r.kind); beep(r.kind === "moved");
+  }
+  $("#scanBtn").addEventListener("click", openCam);
+  $("#camClose").addEventListener("click", closeCam);
+
+  // ---------- Filters + box sheet ----------
+  $("#filters").addEventListener("click", (e) => { const b = e.target.closest("[data-filter]"); if (!b) return; filter = b.dataset.filter; renderFilters(); renderRegister(); });
+  let removeArmed = false, removeT;
+  function openSheet(id) {
+    const b = boxes[id]; if (!b) return;
+    sheetId = id;
+    $("#sheetNum").textContent = pad3(b.n) + " · " + STEP_NAME[statusOf(b)];
+    $("#sheetSeg").innerHTML = STEPS.map(([k, l]) => `<button type="button" data-step="${k}" aria-pressed="${statusOf(b) === k}">${l}</button>`).join("");
+    $("#shCat").value = b.cat || "";
+    $("#shDest").innerHTML = `<option value="">No room yet</option>` + savoyRooms().map((r) => `<option value="${esc(r.id)}" ${r.id === b.dest ? "selected" : ""}>${esc(r.name)}</option>`).join("");
+    removeArmed = false; $("#shRemove").textContent = "Remove";
+    const d = $("#sheet"); if (d.showModal) d.showModal(); else d.setAttribute("open", "");
+  }
+  function closeSheet() { const d = $("#sheet"); if (d.close) d.close(); else d.removeAttribute("open"); sheetId = null; }
+  $("#register").addEventListener("click", (e) => { const b = e.target.closest("[data-box]"); if (b) openSheet(b.dataset.box); });
+  $("#sheetClose").addEventListener("click", closeSheet);
+  $("#sheetSeg").addEventListener("click", async (e) => {
+    const btn = e.target.closest("[data-step]"); if (!btn || !sheetId) return;
+    try { const r = await api("/api/boxes/" + sheetId, { method: "PATCH", body: JSON.stringify({ status: btn.dataset.step, resetScan: true }) }); boxes[sheetId] = r.box; openSheet(sheetId); render(); }
+    catch (err) { toast("Couldn't change the stage."); }
+  });
+  $("#shSave").addEventListener("click", async () => {
+    if (!sheetId) return;
+    const cat = $("#shCat").value.trim(); if (!cat) { toast("Say what's in the box."); return; }
+    try { const r = await api("/api/boxes/" + sheetId, { method: "PATCH", body: JSON.stringify({ cat, dest: $("#shDest").value || null }) }); boxes[sheetId] = r.box; toast("Saved. Reprint the label if the room changed."); closeSheet(); render(); }
+    catch (err) { toast("Couldn't save that change."); }
+  });
+  $("#shLabel").addEventListener("click", () => { if (!sheetId) return; current = sheetId; hot = sheetId; closeSheet(); render(); $("#lbCanvas").scrollIntoView({ behavior: "smooth", block: "center" }); });
+  $("#shRemove").addEventListener("click", async () => {
+    if (!sheetId) return;
+    if (!removeArmed) { removeArmed = true; $("#shRemove").textContent = "Tap again to remove"; clearTimeout(removeT); removeT = setTimeout(() => { removeArmed = false; $("#shRemove").textContent = "Remove"; }, 3000); return; }
+    const id = sheetId, n = boxes[id] && boxes[id].n;
+    try { await api("/api/boxes/" + id, { method: "DELETE" }); delete boxes[id]; if (current === id) current = null; closeSheet(); toast(`Box ${pad3(n)} removed. Its number won't be reused.`); render(); }
+    catch (err) { toast("Couldn't remove that box."); }
+  });
+
+  // ---------- Arriving from a scanned QR (/b/014) ----------
+  async function fromLink() {
+    const id = idFrom(location.pathname);
+    if (!id || !/^\/b\//.test(location.pathname)) return;
+    history.replaceState(null, "", "/");
+    let prev = null; try { prev = JSON.parse(sessionStorage.getItem("linkScan") || "null"); } catch (e) {}
+    if (prev && prev.id === id && Date.now() - prev.at < 60000) return;
+    try { sessionStorage.setItem("linkScan", JSON.stringify({ id, at: Date.now() })); } catch (e) {}
+    const r = await scan(id, "link");
+    toast(r.text);
+    const row = document.querySelector(`[data-box="${id}"]`); if (row) row.scrollIntoView({ block: "center" });
+  }
+
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(drawPreview);
+  refresh().then(fromLink);
+})();
+</script>
+</body>
+</html>
