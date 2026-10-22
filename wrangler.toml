@@ -17,6 +17,6 @@ database_id = "dfe4fa59-944a-435f-9dbc-47a78cbc1702"
 
 [vars]
 # The checklists (/api/lists/*) stay locked until one of these is set. See README step 3.
-# ACCESS_TEAM_DOMAIN = "rog42"      # your Zero Trust team name (before .cloudflareaccess.com)
+ACCESS_TEAM_DOMAIN = "rog42"        # Zero Trust team name (rog42.cloudflareaccess.com)
 # ACCESS_AUD = ""                   # optional: the Access application's AUD tag
 # LISTS_OPEN = "1"                  # opens the checklists to anyone with the link
