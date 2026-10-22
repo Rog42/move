@@ -1,7 +1,7 @@
 # move.rog42.net
 
 Box labels, QR scanning and the move checklists for 133 Oratava Ave → 12 Savoy Court (Sat 7 Nov 2026).
-It runs on Cloudflare Pages, with Pages Functions and a D1 database.
+It runs as a single Cloudflare Worker: static files from `public/`, the API in `src/`, and a D1 database.
 
 | Path | What it is | Who can use it |
 | --- | --- | --- |
@@ -15,18 +15,12 @@ Each scan moves a box one step: **labelled → packed → loaded → in room**. 
 
 The D1 database `move` already exists in the Cloudflare account and is loaded with the checklists, the rooms and box 001. Its id is in `wrangler.toml`.
 
-1. **Create the Pages project.** In Workers & Pages, choose Create → Pages → Connect to Git and pick `Rog42/move`.
-   - Project name: `move`. It must match `name` in `wrangler.toml`.
-   - Framework preset: None.
-   - Build command: leave it empty.
-   - Build output directory: `public`.
-
-   The D1 binding (`DB` → `move`) comes from `wrangler.toml`, so there's nothing to bind in the dashboard. Pages treats that file as the source of truth for bindings and variables.
-2. **Add the domain.** In Custom domains, add `move.rog42.net`. If rog42.net's DNS is on Cloudflare, it creates the CNAME for you. Otherwise point a CNAME at `move-xxx.pages.dev`.
+1. **The Worker.** It's called `move`, is connected to `Rog42/move`, and deploys on every push to `main` with `npx wrangler deploy`. Everything it needs is in `wrangler.toml`: the D1 binding (`DB` → `move`), the static files and the variables. There's nothing to set in the dashboard.
+2. **Add the domain.** In the Worker, go to Settings → Domains & Routes → Add → Custom domain and enter `move.rog42.net`. Cloudflare creates the DNS record and certificate. For this to work, rog42.net's DNS has to be on the same Cloudflare account.
 3. **Lock the checklists** with Cloudflare Access (Zero Trust → Access → Applications → Add → Self-hosted):
    - Application domains: `move.rog42.net/lists` and `move.rog42.net/api/lists`. Access paths cover everything under them.
    - Policy: Allow, with your and Lu's email addresses.
-   - Then tell the app your team name: uncomment `ACCESS_TEAM_DOMAIN` in `wrangler.toml`, set it to the part before `.cloudflareaccess.com` (for example `rog42`), and push. Pages redeploys on its own.
+   - Then tell the app your team name: uncomment `ACCESS_TEAM_DOMAIN` in `wrangler.toml`, set it to the part before `.cloudflareaccess.com` (for example `rog42`), and push. The Worker redeploys on its own.
    - Optional: also set `ACCESS_AUD` to the application's Audience (AUD) tag, which pins tokens to this one app.
 
 Until step 3 is done, `/api/lists/*` returns 403. The account and policy numbers can't be read publicly even for a moment. To deliberately make the checklists public instead, set `LISTS_OPEN = "1"`.
@@ -42,7 +36,7 @@ Until step 3 is done, `/api/lists/*` returns 403. The account and policy numbers
 ```sh
 npm install
 npx wrangler d1 execute move --local --file=schema.sql
-npx wrangler pages dev public        # http://localhost:8788
+npx wrangler dev --port 8788         # http://localhost:8788
 ```
 
 On localhost, `/lists` is always open, and QR codes point at `http://localhost:8788/b/NNN` instead of move.rog42.net.

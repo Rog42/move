@@ -1,4 +1,4 @@
-// Move app API: Cloudflare Pages Function over a D1 database bound as DB.
+// Move app API over a D1 database bound as DB. Called from src/index.js for every /api/* request.
 //
 // Public (box scanning):
 //   GET    /api/state                 rooms + boxes
@@ -14,7 +14,7 @@
 //   PATCH  /api/lists/doc/:col/:id    merge into a document (nested objects merge)
 //   DELETE /api/lists/doc/:col/:id    delete a document
 
-import { listsAccess } from "../../lib/access.js";
+import { listsAccess } from "./access.js";
 
 const STEPS = ["labelled", "packed", "loaded", "inroom"];
 const SCAN_GUARD_MS = 15000;
@@ -70,10 +70,9 @@ function cleanBoxFields(body) {
   return out;
 }
 
-export async function onRequest({ request, env, params }) {
+export async function handleApi(request, env, parts) {
   const DB = env.DB;
-  if (!DB) return fail(500, "The DB binding is missing. Add the D1 database to this Pages project.");
-  const parts = Array.isArray(params.path) ? params.path : [params.path].filter(Boolean);
+  if (!DB) return fail(500, "The DB binding is missing. Check the d1_databases entry in wrangler.toml.");
   const method = request.method;
 
   try {
