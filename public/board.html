@@ -126,9 +126,13 @@ h1, h2 { margin: 0; }
     $("#qr").innerHTML = q.createSvgTag({ cellSize: 3, margin: 2 });
   } catch (e) { $(".join").hidden = true; }
 
+  // /board?test shows test labels (T001...) too, for trying out the scanner.
+  const SHOW_TESTS = new URLSearchParams(location.search).has("test");
+  if (SHOW_TESTS) document.querySelector(".title h1").textContent = "Move board (with test labels)";
+  const tagOf = (b) => (b.test ? "T" : "") + pad3(b.n);
   let rooms = {}, boxes = {}, okAt = 0;
   function render() {
-    const all = Object.entries(boxes).map(([id, b]) => Object.assign({ id }, b)).filter((b) => !b.test);
+    const all = Object.entries(boxes).map(([id, b]) => Object.assign({ id }, b)).filter((b) => SHOW_TESTS || !b.test);
     const by = { labelled: [], packed: [], loaded: [], inroom: [] };
     all.forEach((b) => by[statusOf(b)].push(b));
     const total = all.length;
@@ -145,7 +149,7 @@ h1, h2 { margin: 0; }
         const r = rooms[b.dest], t = when(b.statusAt);
         const room = r ? String(r.name) : "No room yet";
         return `<div class="card ${t && now - t < FRESH_MS ? "is-new" : ""}" style="--sw:${r ? hexOf(r.colour) || "var(--line)" : "var(--line)"}">
-          <span class="n">${pad3(b.n)}</span>
+          <span class="n">${tagOf(b)}</span>
           ${b.cat ? `<span class="what">${esc(b.cat)}</span>` : `<span class="what is-empty">Contents not set</span>`}
           <span class="room">→ ${esc(room)}</span>
           ${t ? `<span class="ago">${ago(t)}</span>` : ""}
