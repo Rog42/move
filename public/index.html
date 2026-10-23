@@ -201,7 +201,7 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     <h2 id="makeH">New box label</h2>
     <div class="maker-grid">
       <div class="maker-form">
-        <label class="fld">What's in it
+        <label class="fld">What's in it (optional)
           <input type="text" id="lbCat" list="catList" maxlength="40" placeholder="e.g. Kitchenware" autocomplete="off">
         </label>
         <datalist id="catList"></datalist>
@@ -275,7 +275,7 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
   <div class="sheet-in">
     <div class="sheet-head"><b id="sheetNum">000</b><button class="linkbtn" type="button" id="sheetClose">Close</button></div>
     <div class="seg" id="sheetSeg" role="group" aria-label="Stage"></div>
-    <label class="fld">What's in it <input type="text" id="shCat" maxlength="40" list="catList" autocomplete="off"></label>
+    <label class="fld">What's in it (optional) <input type="text" id="shCat" maxlength="40" list="catList" autocomplete="off"></label>
     <label class="fld">Goes to <select id="shDest"></select></label>
     <div class="row">
       <button class="btn btn-primary" type="button" id="shSave">Save changes</button>
@@ -437,7 +437,7 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     const ink = ghost ? "#9A9A9A" : "#000000";
     const numTxt = box && box.n ? tag(box) : "000";
     // A real label with no contents gets a write-in line for a marker instead.
-    const blank = !ghost && !(box && box.cat);
+    const blank = !(box && box.cat);
     const cat = blank ? "" : (box && box.cat ? String(box.cat) : "Contents").toUpperCase();
     const writeIn = (x, y, w, h) => { c.fillStyle = ink; c.fillRect(x, y + Math.round(h * 0.85), w, Math.max(3, Math.round(h * 0.06))); };
     const dest = box && box.dest ? labelRoom(box.dest).toUpperCase() : "ROOM?";
@@ -642,7 +642,6 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
   $("#lbSize").addEventListener("change", (e) => { size = e.target.value; try { localStorage.setItem("labelSize", size); } catch (err) {} drawPreview(); });
   $("#lbCreate").addEventListener("click", async () => {
     const cat = $("#lbCat").value.trim(), dest = $("#lbDest").value || null;
-    if (!cat) { toast("Say what's in the box first."); $("#lbCat").focus(); return; }
     const btn = $("#lbCreate"); btn.disabled = true;
     try {
       const r = await api("/api/boxes", { method: "POST", body: JSON.stringify({ cat, dest, test: $("#lbTest").checked }) });
@@ -841,7 +840,7 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
   });
   $("#shSave").addEventListener("click", async () => {
     if (!sheetId) return;
-    const cat = $("#shCat").value.trim(); if (!cat) { toast("Say what's in the box."); return; }
+    const cat = $("#shCat").value.trim();
     try { const r = await api("/api/boxes/" + sheetId, { method: "PATCH", body: JSON.stringify({ cat, dest: $("#shDest").value || null }) }); boxes[sheetId] = r.box; toast("Saved. Reprint the label if the room changed."); closeSheet(); render(); }
     catch (err) { toast("Couldn't save that change."); }
   });

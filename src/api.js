@@ -89,14 +89,13 @@ export async function handleApi(request, env, parts) {
       const body = await readBody(request);
       if (!body) return fail(400, "Send JSON with cat and dest.");
       const f = cleanBoxFields(body);
-      if (!f.cat) return fail(400, "Say what's in the box.");
       // Test labels (T001, T002...) have their own counter so they never use up real box numbers.
       const test = body.test === true;
       if (test) await DB.prepare("INSERT OR IGNORE INTO counters (k, v) VALUES ('test', 0)").run();
       const row = await DB.prepare("UPDATE counters SET v = v + 1 WHERE k = ? RETURNING v").bind(test ? "test" : "box").first();
       if (!row) return fail(500, "The box counter is missing. Run schema.sql.");
       const n = row.v, id = (test ? "t" : "b") + pad3(n);
-      const box = { n, cat: f.cat, dest: f.dest ?? null, status: "labelled", createdAt: new Date().toISOString() };
+      const box = { n, cat: f.cat || "", dest: f.dest ?? null, status: "labelled", createdAt: new Date().toISOString() };
       if (test) box.test = true;
       await putDoc(DB, "boxes", id, box);
       return json({ id, box }, 201);
