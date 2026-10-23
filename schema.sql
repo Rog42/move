@@ -13,3 +13,4 @@ CREATE TABLE IF NOT EXISTS counters (
 );
 
 INSERT OR IGNORE INTO counters (k, v) VALUES ('box', 0);
+INSERT OR IGNORE INTO counters (k, v) VALUES ('test', 0);

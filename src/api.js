@@ -5,6 +5,7 @@
 //   POST   /api/boxes                 create the next numbered box {cat, dest}
 //   PATCH  /api/boxes/:id             change cat / dest / status
 //   DELETE /api/boxes/:id             remove a box (its number is never reused)
+//   DELETE /api/boxes?test=1          remove every test label (T001...) and restart test numbering
 //   POST   /api/scan/:id              move a box one step: labelled > packed > loaded > inroom
 //
 // Checklists. Closed until Cloudflare Access is set up (ACCESS_TEAM_DOMAIN) or LISTS_OPEN=1; see lib/access.js:
@@ -87,12 +88,24 @@ export async function handleApi(request, env, parts) {
       if (!body) return fail(400, "Send JSON with cat and dest.");
       const f = cleanBoxFields(body);
       if (!f.cat) return fail(400, "Say what's in the box.");
-      const row = await DB.prepare("UPDATE counters SET v = v + 1 WHERE k = 'box' RETURNING v").first();
+      // Test labels (T001, T002...) have their own counter so they never use up real box numbers.
+      const test = body.test === true;
+      if (test) await DB.prepare("INSERT OR IGNORE INTO counters (k, v) VALUES ('test', 0)").run();
+      const row = await DB.prepare("UPDATE counters SET v = v + 1 WHERE k = ? RETURNING v").bind(test ? "test" : "box").first();
       if (!row) return fail(500, "The box counter is missing. Run schema.sql.");
-      const n = row.v, id = "b" + pad3(n);
+      const n = row.v, id = (test ? "t" : "b") + pad3(n);
       const box = { n, cat: f.cat, dest: f.dest ?? null, status: "labelled", createdAt: new Date().toISOString() };
+      if (test) box.test = true;
       await putDoc(DB, "boxes", id, box);
       return json({ id, box }, 201);
+    }
+
+    // Bulk delete is only for test labels; it also restarts test numbering at T001.
+    if (parts[0] === "boxes" && parts.length === 1 && method === "DELETE") {
+      if (new URL(request.url).searchParams.get("test") !== "1") return fail(400, "Only test labels can be deleted in bulk.");
+      const res = await DB.prepare("DELETE FROM docs WHERE col = 'boxes' AND id LIKE 't%'").run();
+      await DB.prepare("INSERT INTO counters (k, v) VALUES ('test', 0) ON CONFLICT (k) DO UPDATE SET v = 0").run();
+      return json({ deleted: (res.meta && res.meta.changes) || 0 });
     }
 
     if (parts[0] === "boxes" && parts.length === 2) {

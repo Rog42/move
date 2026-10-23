@@ -27,6 +27,8 @@ Until step 3 is done, `/api/lists/*` returns 403. The account and policy numbers
 
 ## Printing labels
 
+To try a printer or the scanning without using up box numbers, tick **Test label** before creating. Test labels are numbered T001, T002… and print and scan like real ones. **Delete all**, next to Test labels at the bottom of the box list, clears them and starts test numbering again at T001.
+
 - **Any home printer, from a phone or computer:** choose A4 sheet, 4 labels. Each box goes onto the sheet with Add to sheet, and Print sheet prints once there are enough to fill it, onto Avery L7169 (99.1 × 139 mm, 4 per A4) or plain paper. Print it at 100% / Actual size, never Fit to page. A USB printer on a Mac can be shared to iPhones with Printer Sharing (System Settings → General → Sharing), after which it shows up under AirPrint.
 - **HotLabel M6 (USB):** open move.rog42.net on the computer the M6 is plugged into. Choose 4 × 6 in, set how many sides, then tap Print. Each copy prints as its own 4×6 page. In the print dialog, pick the M6, set the paper to 4×6 / 100×150 mm, and set margins to None at 100% scale.
 - **MUNBYN 130B or another Bluetooth 4×6 printer, from a phone:** choose 4 × 6 in, set the sides, then tap Share and pick the printer's app (MUNBYN Print). You get a PDF with one exact 4×6 page per copy. The phone's Print button can't see Bluetooth label printers.
@@ -61,6 +63,7 @@ npx wrangler d1 execute move --local --file=seed.sql
 | POST | `/api/boxes` | `{cat, dest}`. The number comes from an atomic counter in D1, so two phones never get the same one |
 | PATCH | `/api/boxes/:id` | `{cat?, dest?, status?, resetScan?}` |
 | DELETE | `/api/boxes/:id` | The number is never reused |
+| DELETE | `/api/boxes?test=1` | Deletes every test label (T001…) and restarts test numbering |
 | POST | `/api/scan/:id` | Moves the box one step. Returns `moved`, `recent` (within 15 s) or `done` |
 | GET | `/api/lists/state` | Checklist items and settings (Access only) |
 | POST, PUT, PATCH, DELETE | `/api/lists/doc/:col[/:id]` | `col` is `items` or `meta`. PATCH deep-merges (Access only) |

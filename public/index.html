@@ -79,6 +79,9 @@ input[type="text"], input[inputmode], select { width: 100%; min-width: 0; paddin
 .copies { display: flex; align-items: center; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
 .copies button { border: 0; background: none; width: 36px; height: 34px; font-size: 18px; font-weight: 600; color: var(--accent); }
 .copies button:disabled { color: var(--muted); opacity: .5; cursor: default; }
+.testtick { display: flex; gap: 8px; align-items: flex-start; font-size: 13.5px; color: var(--muted); cursor: pointer; }
+.testtick input { accent-color: var(--tape); width: 18px; height: 18px; margin: 1px 0 0; flex: none; }
+.g-head .linkbtn { margin-left: 8px; color: var(--late); }
 .tray { border: 1px dashed var(--line); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; font-size: 13.5px; }
 .tray b { font-family: var(--f-mono); font-weight: 500; }
 .copies output { min-width: 4.6em; text-align: center; font-size: 13.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
@@ -156,7 +159,7 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     <h2 id="scanH">Scan</h2>
     <button class="btn btn-primary btn-big" type="button" id="scanBtn">Scan boxes</button>
     <form class="numform" id="numForm" autocomplete="off">
-      <input id="numIn" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="Or type a box number" aria-label="Box number">
+      <input id="numIn" inputmode="numeric" maxlength="4" placeholder="Or type a box number" aria-label="Box number">
       <button class="btn" type="submit">Scan</button>
     </form>
     <p class="hint">Each scan moves a box one step: first packed, then loaded, then in room.</p>
@@ -174,6 +177,7 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
         <label class="fld">Goes to
           <select id="lbDest"></select>
         </label>
+        <label class="testtick"><input type="checkbox" id="lbTest"> Test label (numbered T001, T002… so real box numbers aren't used up)</label>
         <button class="btn btn-primary btn-big" type="button" id="lbCreate">Create label</button>
         <p class="hint" id="lbHint">Numbers come from one shared counter, so two people can never get the same one.</p>
       </div>
@@ -286,12 +290,18 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
   const roomName = (id) => (rooms[id] ? String(rooms[id].name) : "");
   const labelRoom = (id) => roomName(id).replace(/\s*\((check|TBC)\)\s*/i, "").trim();
   const hexOf = (c) => (c && /^#[0-9a-fA-F]{6}$/.test(c.hex || "") ? c.hex : "");
-  const list = () => Object.entries(boxes).map(([id, b]) => Object.assign({ id }, b)).sort((a, b) => num(a.n) - num(b.n));
+  const all_ = () => Object.entries(boxes).map(([id, b]) => Object.assign({ id }, b)).sort((a, b) => num(a.n) - num(b.n));
+  const list = () => all_().filter((b) => !b.test);
+  const tests = () => all_().filter((b) => b.test);
+  const tag = (b) => (b && b.test ? "T" : "") + pad3(b ? b.n : 0);
+  const nextOf = (rows) => rows.reduce((m, b) => Math.max(m, num(b.n)), 0) + 1;
   const statusOf = (b) => (STEP_NAME[b.status] ? b.status : b.arrived === true ? "inroom" : "labelled");
+  // Accepts /b/014, /b/T003, #b014 (old labels), or a typed 14 / T3.
   function idFrom(text) {
     const s = String(text || "").trim();
-    const m = s.match(/\/b\/(\d{1,4})\b/) || s.match(/#b(\d{1,4})\b/i) || s.match(/^b?(\d{1,4})$/i);
-    return m ? "b" + pad3(Number(m[1])) : null;
+    const m = s.match(/\/b\/(t?)(\d{1,4})\b/i) || s.match(/#b()(\d{1,4})\b/i) || s.match(/^(t|b)?(\d{1,4})$/i);
+    if (!m) return null;
+    return (m[1] && m[1].toLowerCase() === "t" ? "t" : "b") + pad3(Number(m[2]));
   }
 
   // ---------- Data ----------
@@ -317,33 +327,49 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     }
     const cats = [...new Set(all.map((b) => b.cat).filter(Boolean).concat(DEFAULT_CATS))];
     $("#catList").innerHTML = cats.map((c) => `<option value="${esc(c)}"></option>`).join("");
-    const next = all.reduce((m, b) => Math.max(m, num(b.n)), 0) + 1;
-    $("#lbCreate").textContent = `Create box ${pad3(next)}`;
+    $("#lbCreate").textContent = $("#lbTest").checked ? `Create test label T${pad3(nextOf(tests()))}` : `Create box ${pad3(nextOf(all))}`;
     renderLog(); renderFilters(); renderRegister(); drawPreview();
   }
 
   function renderLog() {
-    $("#log").innerHTML = log.slice(0, 5).map((e, i) => `<li><b>${pad3(e.n)}</b> ${esc(e.cat || "")} → ${esc(e.note)}${i === 0 && e.undo ? ` <button class="linkbtn" type="button" data-undo="1">Undo</button>` : ""}</li>`).join("");
+    $("#log").innerHTML = log.slice(0, 5).map((e, i) => `<li><b>${esc(e.t)}</b> ${esc(e.cat || "")} → ${esc(e.note)}${i === 0 && e.undo ? ` <button class="linkbtn" type="button" data-undo="1">Undo</button>` : ""}</li>`).join("");
   }
   function renderFilters() {
     const opts = [["all", "All"]].concat(STEPS);
     $("#filters").innerHTML = opts.map(([k, l]) => `<button class="chip" type="button" data-filter="${k}" aria-pressed="${filter === k}">${l}</button>`).join("");
   }
+  const rowHTML = (b) => { const st = statusOf(b); return `<li><button class="box ${b.id === hot ? "is-hot" : ""}" type="button" data-box="${esc(b.id)}"><span class="bn">${tag(b)}</span><span class="bc">${esc(b.cat || "")}</span><span class="st st-${st}">${STEP_NAME[st]}</span></button></li>`; };
   function renderRegister() {
     if (!loaded) return;
-    const all = list();
-    if (!all.length) { $("#register").innerHTML = `<div class="empty"><b>No boxes yet</b>Create the first label above. Numbers start at 001 and are never reused.</div>`; return; }
+    const all = list(), tst = tests();
+    const testHTML = tst.length ? `<section><div class="g-head"><h3>Test labels</h3><span>${plural(tst.length, "label", "labels")}</span><button class="linkbtn" type="button" id="delTests">${delTestsArmed ? "Tap again to delete them all" : "Delete all"}</button></div><ul class="boxes">${tst.map(rowHTML).join("")}</ul></section>` : "";
+    if (!all.length) { $("#register").innerHTML = `<div class="groups"><div class="empty"><b>No boxes yet</b>Create the first label above. Numbers start at 001 and are never reused.</div>${testHTML}</div>`; return; }
     const shown = filter === "all" ? all : all.filter((b) => statusOf(b) === filter);
-    if (!shown.length) { $("#register").innerHTML = `<div class="empty"><b>No ${esc(STEP_NAME[filter].toLowerCase())} boxes</b>Pick another filter to see the rest.</div>`; return; }
+    if (!shown.length) { $("#register").innerHTML = `<div class="groups"><div class="empty"><b>No ${esc(STEP_NAME[filter].toLowerCase())} boxes</b>Pick another filter to see the rest.</div>${testHTML}</div>`; return; }
     const groups = savoyRooms().map((r) => ({ r, rows: shown.filter((b) => b.dest === r.id) })).filter((g) => g.rows.length);
     const loose = shown.filter((b) => !b.dest || !rooms[b.dest]);
     if (loose.length) groups.push({ r: null, rows: loose });
     $("#register").innerHTML = `<div class="groups">${groups.map((g) => {
       const inr = g.rows.filter((b) => statusOf(b) === "inroom").length;
       return `<section><div class="g-head"><i class="sw" style="--sw:${g.r ? hexOf(g.r.colour) || "transparent" : "transparent"}"></i><h3>${g.r ? esc(g.r.name) : "No room yet"}</h3><span>${plural(g.rows.length, "box", "boxes")} · ${inr} in room</span></div>
-        <ul class="boxes">${g.rows.map((b) => { const st = statusOf(b); return `<li><button class="box ${b.id === hot ? "is-hot" : ""}" type="button" data-box="${esc(b.id)}"><span class="bn">${pad3(b.n)}</span><span class="bc">${esc(b.cat || "")}</span><span class="st st-${st}">${STEP_NAME[st]}</span></button></li>`; }).join("")}</ul></section>`;
-    }).join("")}</div>`;
+        <ul class="boxes">${g.rows.map(rowHTML).join("")}</ul></section>`;
+    }).join("")}${testHTML}</div>`;
   }
+  let delTestsArmed = false, delTestsT;
+  $("#register").addEventListener("click", async (e) => {
+    if (!e.target.closest("#delTests")) return;
+    e.stopPropagation();
+    if (!delTestsArmed) { delTestsArmed = true; renderRegister(); clearTimeout(delTestsT); delTestsT = setTimeout(() => { delTestsArmed = false; renderRegister(); }, 3000); return; }
+    delTestsArmed = false; clearTimeout(delTestsT);
+    try {
+      const r = await api("/api/boxes?test=1", { method: "DELETE" });
+      Object.keys(boxes).forEach((id) => { if (boxes[id].test) delete boxes[id]; });
+      if (current && !boxes[current]) current = null;
+      tray = tray.filter((id) => boxes[id]); saveTray();
+      toast(`Deleted ${plural(r.deleted || 0, "test label", "test labels")}. Test numbers start again at T001.`);
+      render();
+    } catch (err) { toast("Couldn't delete the test labels."); }
+  });
 
   // ---------- Label drawing (black on white at 8 dots per mm) ----------
   const LFONT = '"Instrument Sans", Arial, Helvetica, sans-serif';
@@ -370,10 +396,10 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     const c = cv.getContext("2d");
     c.fillStyle = "#FFFFFF"; c.fillRect(0, 0, W, H);
     const ink = ghost ? "#9A9A9A" : "#000000";
-    const numTxt = box && box.n ? pad3(box.n) : "000";
+    const numTxt = box && box.n ? tag(box) : "000";
     const cat = (box && box.cat ? String(box.cat) : "Contents").toUpperCase();
     const dest = box && box.dest ? labelRoom(box.dest).toUpperCase() : "ROOM?";
-    const qr = box && box.n ? qrMatrix(BASE + "/b/" + pad3(box.n)) : null;
+    const qr = box && box.n ? qrMatrix(BASE + "/b/" + tag(box)) : null;
     c.textBaseline = "top";
     if (portrait) {
       const pad = Math.round(W * 0.06), barH = Math.round(W * 0.2);
@@ -410,8 +436,8 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     const cur = current && boxes[current] ? Object.assign({ id: current }, boxes[current]) : null;
     if (cur) drawLabel($("#lbCanvas"), cur, false);
     else {
-      const next = list().reduce((m, b) => Math.max(m, num(b.n)), 0) + 1;
-      drawLabel($("#lbCanvas"), { n: next, cat: $("#lbCat").value.trim(), dest: $("#lbDest").value }, true);
+      const test = $("#lbTest").checked;
+      drawLabel($("#lbCanvas"), { n: nextOf(test ? tests() : list()), test, cat: $("#lbCat").value.trim(), dest: $("#lbDest").value }, true);
     }
     ["#lbPrint", "#lbShare", "#lbSave"].forEach((s) => ($(s).disabled = !cur));
     $("#cpN").textContent = copies === 1 ? "1 side" : `${copies} sides`;
@@ -420,7 +446,7 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     $("#lbPrint").textContent = sheet ? `Add ${copies} to sheet` : copies === 1 ? "Print" : `Print ${copies}`;
     $("#lbShare").hidden = sheet; $("#lbSave").hidden = sheet;
     $("#lbHint").textContent = cur
-      ? `Box ${pad3(cur.n)} is ready.${copies > 1 ? ` Stick one on each of ${copies} sides; every copy scans as the same box.` : ""} ${sheet ? "Add it to the sheet, then print once the sheet is full." : "Change the fields to start the next one."}`
+      ? `Box ${tag(cur)} is ready.${copies > 1 ? ` Stick one on each of ${copies} sides; every copy scans as the same box.` : ""} ${sheet ? "Add it to the sheet, then print once the sheet is full." : "Change the fields to start the next one."}`
       : "Numbers come from one shared counter, so two people can never get the same one.";
     renderTray();
   }
@@ -437,7 +463,7 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     const counts = {};
     tray.forEach((id) => { counts[id] = (counts[id] || 0) + 1; });
     const sheets = Math.ceil(tray.length / 4), free = sheets * 4 - tray.length;
-    const who = Object.entries(counts).map(([id, n]) => `<b>${pad3(boxes[id] ? boxes[id].n : 0)}</b>${n > 1 ? " ×" + n : ""}`).join(", ");
+    const who = Object.entries(counts).map(([id, n]) => `<b>${tag(boxes[id])}</b>${n > 1 ? " ×" + n : ""}`).join(", ");
     $("#trayText").innerHTML = trayPrinted
       ? `Sheet printed. Clear it once the labels look right, or print it again.`
       : `On the sheet: ${who}. ${tray.length} of ${sheets * 4} labels${free ? `, ${free} still free` : ", sheet full"}.`;
@@ -487,6 +513,7 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
 
   // ---------- Create / print / share ----------
   $("#lbCat").addEventListener("input", () => { current = null; drawPreview(); });
+  $("#lbTest").addEventListener("change", () => { current = null; render(); });
   $("#lbDest").addEventListener("change", () => { current = null; drawPreview(); });
   $("#lbSize").value = size;
   $("#lbSize").addEventListener("change", (e) => { size = e.target.value; try { localStorage.setItem("labelSize", size); } catch (err) {} drawPreview(); });
@@ -495,9 +522,9 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     if (!cat) { toast("Say what's in the box first."); $("#lbCat").focus(); return; }
     const btn = $("#lbCreate"); btn.disabled = true;
     try {
-      const r = await api("/api/boxes", { method: "POST", body: JSON.stringify({ cat, dest }) });
+      const r = await api("/api/boxes", { method: "POST", body: JSON.stringify({ cat, dest, test: $("#lbTest").checked }) });
       boxes[r.id] = r.box; current = r.id; hot = r.id;
-      toast(`Box ${pad3(r.box.n)} created`);
+      toast(`${r.box.test ? "Test label" : "Box"} ${tag(r.box)} created`);
       render(); refresh();
     } catch (e) { toast("Couldn't create the box: " + e.message); }
     finally { btn.disabled = false; }
@@ -534,7 +561,7 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     return new Blob(parts, { type: "application/pdf" });
   }
   async function labelFile(b) {
-    const base = `box-${pad3(b.n)}${copies > 1 ? "-x" + copies : ""}`;
+    const base = `box-${tag(b)}${copies > 1 ? "-x" + copies : ""}`;
     if (!isRoll()) return new File([labelPdf()], base + ".pdf", { type: "application/pdf" });
     const blob = await new Promise((res) => stripCanvas().toBlob(res, "image/png"));
     return blob ? new File([blob], base + ".png", { type: "image/png" }) : null;
@@ -546,7 +573,7 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
       for (let i = 0; i < copies; i++) tray.push(current);
       saveTray(); renderTray();
       const free = Math.ceil(tray.length / 4) * 4 - tray.length;
-      toast(`Box ${pad3(boxes[current].n)} added. ${free ? `${free} label${free === 1 ? "" : "s"} still free on the sheet.` : "The sheet is full, ready to print."}`);
+      toast(`Box ${tag(boxes[current])} added. ${free ? `${free} label${free === 1 ? "" : "s"} still free on the sheet.` : "The sheet is full, ready to print."}`);
       return;
     }
     const [w, h] = SIZES[size];
@@ -562,7 +589,7 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     const b = boxes[current]; if (!b) return;
     const file = await labelFile(b); if (!file) return;
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      try { await navigator.share({ files: [file], title: `Box ${pad3(b.n)}` }); } catch (e) { if (e && e.name !== "AbortError") toast("Sharing didn't work. Try Save."); }
+      try { await navigator.share({ files: [file], title: `Box ${tag(b)}` }); } catch (e) { if (e && e.name !== "AbortError") toast("Sharing didn't work. Try Save."); }
     } else toast("This browser can't share files. Use Save or Print.");
   });
   $("#lbSave").addEventListener("click", async () => {
@@ -591,13 +618,13 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
       const r = await api("/api/scan/" + encodeURIComponent(id), { method: "POST" });
       boxes[id] = r.box; hot = id;
       let note, kind;
-      if (r.result === "moved") { note = STEP_NAME[r.to]; kind = "moved"; log.unshift({ id, n: r.box.n, cat: r.box.cat, note, from: r.from, undo: true }); }
+      if (r.result === "moved") { note = STEP_NAME[r.to]; kind = "moved"; log.unshift({ id, t: tag(r.box), cat: r.box.cat, note, from: r.from, undo: true }); }
       else if (r.result === "recent") { note = `already scanned, still ${STEP_NAME[r.to].toLowerCase()}`; kind = "warn"; }
       else { note = "already in its room"; kind = "warn"; }
-      if (kind !== "moved") log.unshift({ id, n: r.box.n, cat: r.box.cat, note, undo: false });
+      if (kind !== "moved") log.unshift({ id, t: tag(r.box), cat: r.box.cat, note, undo: false });
       log = log.slice(0, 20);
       render();
-      return { kind, text: `${pad3(r.box.n)} ${r.box.cat || ""} → ${note}` };
+      return { kind, text: `${tag(r.box)} ${r.box.cat || ""} → ${note}` };
     } catch (e) {
       if (e.status === 404) return { kind: "bad", text: `Box ${id.replace(/^b/, "")} isn't in the list` };
       return { kind: "bad", text: "Couldn't save that scan. Check the signal and try again." };
@@ -608,7 +635,7 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     const last = log[0]; if (!last || !last.undo) return;
     try {
       const r = await api("/api/boxes/" + last.id, { method: "PATCH", body: JSON.stringify({ status: last.from, resetScan: true }) });
-      boxes[last.id] = r.box; log.shift(); toast(`Box ${pad3(last.n)} back to ${STEP_NAME[last.from].toLowerCase()}`); render();
+      boxes[last.id] = r.box; log.shift(); toast(`${last.t} back to ${STEP_NAME[last.from].toLowerCase()}`); render();
     } catch (err) { toast("Couldn't undo that one."); }
   });
   $("#numForm").addEventListener("submit", async (e) => {
@@ -688,7 +715,7 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
   function openSheet(id) {
     const b = boxes[id]; if (!b) return;
     sheetId = id;
-    $("#sheetNum").textContent = pad3(b.n) + " · " + STEP_NAME[statusOf(b)];
+    $("#sheetNum").textContent = tag(b) + " · " + STEP_NAME[statusOf(b)];
     $("#sheetSeg").innerHTML = STEPS.map(([k, l]) => `<button type="button" data-step="${k}" aria-pressed="${statusOf(b) === k}">${l}</button>`).join("");
     $("#shCat").value = b.cat || "";
     $("#shDest").innerHTML = `<option value="">No room yet</option>` + savoyRooms().map((r) => `<option value="${esc(r.id)}" ${r.id === b.dest ? "selected" : ""}>${esc(r.name)}</option>`).join("");
@@ -713,8 +740,8 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
   $("#shRemove").addEventListener("click", async () => {
     if (!sheetId) return;
     if (!removeArmed) { removeArmed = true; $("#shRemove").textContent = "Tap again to remove"; clearTimeout(removeT); removeT = setTimeout(() => { removeArmed = false; $("#shRemove").textContent = "Remove"; }, 3000); return; }
-    const id = sheetId, n = boxes[id] && boxes[id].n;
-    try { await api("/api/boxes/" + id, { method: "DELETE" }); delete boxes[id]; if (current === id) current = null; closeSheet(); toast(`Box ${pad3(n)} removed. Its number won't be reused.`); render(); }
+    const id = sheetId, t = tag(boxes[id]), wasTest = !!(boxes[id] && boxes[id].test);
+    try { await api("/api/boxes/" + id, { method: "DELETE" }); delete boxes[id]; if (current === id) current = null; closeSheet(); toast(`${wasTest ? "Test label" : "Box"} ${t} removed.${wasTest ? "" : " Its number won't be reused."}`); render(); }
     catch (err) { toast("Couldn't remove that box."); }
   });
 
