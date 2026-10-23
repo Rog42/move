@@ -2,7 +2,9 @@
 //
 // Public (box scanning):
 //   GET    /api/state                 rooms + boxes
-//   POST   /api/boxes                 create the next numbered box {cat, dest}
+//   POST   /api/boxes                 create the next numbered box {cat, dest, test?}
+//   POST   /api/boxes/batch           create many {items: [{cat, dest}], test?}, consecutive numbers
+//   POST   /api/boxes/printed         mark labels printed {ids, printed?} (unprinted = To print list)
 //   PATCH  /api/boxes/:id             change cat / dest / status
 //   DELETE /api/boxes/:id             remove a box (its number is never reused)
 //   DELETE /api/boxes?test=1          remove every test label (T001...) and restart test numbering
@@ -98,6 +100,41 @@ export async function handleApi(request, env, parts) {
       if (test) box.test = true;
       await putDoc(DB, "boxes", id, box);
       return json({ id, box }, 201);
+    }
+
+    // Create many at once: {items: [{cat, dest}], test}. Numbers are taken in one atomic step,
+    // so the batch is consecutive even if someone else is creating labels at the same time.
+    if (parts[0] === "boxes" && parts[1] === "batch" && parts.length === 2 && method === "POST") {
+      const body = await readBody(request);
+      const items = body && Array.isArray(body.items) ? body.items : null;
+      if (!items || !items.length) return fail(400, "Send a list of labels to create.");
+      if (items.length > 100) return fail(400, "That's more than 100 labels in one go. Split it up.");
+      const clean = items.map((it) => { const f = isObj(it) ? cleanBoxFields(it) : {}; return { cat: f.cat || "", dest: f.dest ?? null }; });
+      const test = body.test === true, key = test ? "test" : "box";
+      if (test) await DB.prepare("INSERT OR IGNORE INTO counters (k, v) VALUES ('test', 0)").run();
+      const row = await DB.prepare("UPDATE counters SET v = v + ? WHERE k = ? RETURNING v").bind(clean.length, key).first();
+      if (!row) return fail(500, "The box counter is missing. Run schema.sql.");
+      const first = row.v - clean.length + 1, now = Date.now(), at = new Date(now).toISOString(), out = {};
+      const stmts = clean.map((c, i) => {
+        const n = first + i, id = (test ? "t" : "b") + pad3(n);
+        const box = { n, cat: c.cat, dest: c.dest, status: "labelled", createdAt: at };
+        if (test) box.test = true;
+        out[id] = box;
+        return DB.prepare("INSERT OR REPLACE INTO docs (col, id, data, updated_at) VALUES ('boxes', ?, ?, ?)").bind(id, JSON.stringify(box), now);
+      });
+      await DB.batch(stmts);
+      return json({ boxes: out }, 201);
+    }
+
+    // Take labels off (or put them back on) the To print list: {ids: [...], printed: true|false}.
+    if (parts[0] === "boxes" && parts[1] === "printed" && parts.length === 2 && method === "POST") {
+      const body = await readBody(request);
+      const ids = body && Array.isArray(body.ids) ? body.ids.filter((x) => typeof x === "string" && ID_RE.test(x)).slice(0, 300) : [];
+      const at = body && body.printed === false ? null : new Date().toISOString(), now = Date.now();
+      if (ids.length) {
+        await DB.batch(ids.map((id) => DB.prepare("UPDATE docs SET data = json_set(data, '$.printedAt', json(?)), updated_at = ? WHERE col = 'boxes' AND id = ?").bind(JSON.stringify(at), now, id)));
+      }
+      return json({ ids, printedAt: at });
     }
 
     // Bulk delete is only for test labels; it also restarts test numbering at T001.

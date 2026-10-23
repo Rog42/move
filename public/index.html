@@ -82,8 +82,19 @@ input[type="text"], input[inputmode], select { width: 100%; min-width: 0; paddin
 .testtick { display: flex; gap: 8px; align-items: flex-start; font-size: 13.5px; color: var(--muted); cursor: pointer; }
 .testtick input { accent-color: var(--tape); width: 18px; height: 18px; margin: 1px 0 0; flex: none; }
 .g-head .linkbtn { margin-left: 8px; color: var(--late); }
-.tray { border: 1px dashed var(--line); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; font-size: 13.5px; }
-.tray b { font-family: var(--f-mono); font-weight: 500; }
+.many-form { display: grid; grid-template-columns: 1fr 1fr auto auto; gap: 10px; align-items: end; }
+@media (max-width: 600px) { .many-form { grid-template-columns: 1fr 1fr; } }
+.many-form .copies { height: 44px; }
+.many-form #mAdd { height: 44px; }
+.mlist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.mlist li { display: flex; gap: 10px; align-items: center; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); font-size: 14px; }
+.mlist li b { font-family: var(--f-mono); font-weight: 500; min-width: 2.4em; }
+.mlist li span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.mlist li .linkbtn { color: var(--late); }
+.queue-text { margin: 0; font-size: 14px; }
+.queue-text b { font-family: var(--f-mono); font-weight: 500; }
+.queue-confirm { border: 1px dashed var(--tape); background: var(--tape-soft); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; font-size: 14px; }
+.bc.is-empty { color: var(--muted); font-style: italic; }
 .copies output { min-width: 4.6em; text-align: center; font-size: 13.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
 
 .filters { display: flex; gap: 6px; flex-wrap: wrap; }
@@ -166,6 +177,26 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     <ul class="log" id="log" aria-live="polite"></ul>
   </section>
 
+  <section class="card" aria-labelledby="manyH">
+    <h2 id="manyH">Make several labels</h2>
+    <p class="hint">Build a list, such as 4 boxes for the kitchen or a desk and a cot for the guest room, then create them all at once. Leave "What" blank to write the contents on later.</p>
+    <div class="many-form">
+      <label class="fld">Room <select id="mRoom"></select></label>
+      <label class="fld">What (optional) <input type="text" id="mWhat" list="catList" maxlength="40" placeholder="e.g. Desk, Guitar case" autocomplete="off"></label>
+      <div class="fld">How many
+        <div class="copies" role="group" aria-label="How many labels">
+          <button type="button" id="mMinus" aria-label="Fewer">−</button>
+          <output id="mN" aria-live="polite">4</output>
+          <button type="button" id="mPlus" aria-label="More">+</button>
+        </div>
+      </div>
+      <button class="btn" type="button" id="mAdd">Add to list</button>
+    </div>
+    <ul class="mlist" id="mList"></ul>
+    <label class="testtick"><input type="checkbox" id="mTest"> Make these test labels (T001…)</label>
+    <button class="btn btn-primary btn-big" type="button" id="mCreate" disabled>Create labels</button>
+  </section>
+
   <section class="card" aria-labelledby="makeH">
     <h2 id="makeH">New box label</h2>
     <div class="maker-grid">
@@ -203,14 +234,23 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
           <button class="btn" type="button" id="lbShare" disabled>Share</button>
           <button class="btn" type="button" id="lbSave" disabled>Save</button>
         </div>
-        <div class="tray" id="tray" hidden>
-          <span id="trayText"></span>
-          <div class="row">
-            <button class="btn btn-primary" type="button" id="trayPrint">Print sheet</button>
-            <button class="btn" type="button" id="trayClear">Clear sheet</button>
-          </div>
-        </div>
       </figure>
+    </div>
+  </section>
+
+  <section class="card" id="queueCard" aria-labelledby="queueH" hidden>
+    <h2 id="queueH">To print</h2>
+    <p class="queue-text" id="queueText"></p>
+    <div class="row">
+      <button class="btn btn-primary" type="button" id="queuePrint">Print all</button>
+      <button class="btn" type="button" id="queueSkip">Mark all as printed</button>
+    </div>
+    <div class="queue-confirm" id="queueConfirm" hidden>
+      <span id="queueConfirmText">Did they print OK?</span>
+      <div class="row">
+        <button class="btn btn-primary" type="button" id="queueOk">Yes, take them off the list</button>
+        <button class="btn" type="button" id="queueNo">No, keep them</button>
+      </div>
     </div>
   </section>
 
@@ -319,8 +359,8 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
   function render() {
     const all = list();
     $("#counts").innerHTML = STEPS.map(([k, l]) => `<div class="count"><b>${all.filter((b) => statusOf(b) === k).length}</b><span>${l}</span></div>`).join("");
-    const sel = $("#lbDest");
-    if (document.activeElement !== sel) {
+    for (const sel of [$("#lbDest"), $("#mRoom")]) {
+      if (document.activeElement === sel) continue;
       const cur = sel.value;
       sel.innerHTML = `<option value="">Choose a room</option>` + savoyRooms().map((r) => `<option value="${esc(r.id)}">${esc(r.name)}</option>`).join("");
       if (cur && rooms[cur]) sel.value = cur;
@@ -328,7 +368,7 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     const cats = [...new Set(all.map((b) => b.cat).filter(Boolean).concat(DEFAULT_CATS))];
     $("#catList").innerHTML = cats.map((c) => `<option value="${esc(c)}"></option>`).join("");
     $("#lbCreate").textContent = $("#lbTest").checked ? `Create test label T${pad3(nextOf(tests()))}` : `Create box ${pad3(nextOf(all))}`;
-    renderLog(); renderFilters(); renderRegister(); drawPreview();
+    renderLog(); renderFilters(); renderRegister(); drawPreview(); renderMany(); renderQueue();
   }
 
   function renderLog() {
@@ -338,7 +378,7 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     const opts = [["all", "All"]].concat(STEPS);
     $("#filters").innerHTML = opts.map(([k, l]) => `<button class="chip" type="button" data-filter="${k}" aria-pressed="${filter === k}">${l}</button>`).join("");
   }
-  const rowHTML = (b) => { const st = statusOf(b); return `<li><button class="box ${b.id === hot ? "is-hot" : ""}" type="button" data-box="${esc(b.id)}"><span class="bn">${tag(b)}</span><span class="bc">${esc(b.cat || "")}</span><span class="st st-${st}">${STEP_NAME[st]}</span></button></li>`; };
+  const rowHTML = (b) => { const st = statusOf(b); return `<li><button class="box ${b.id === hot ? "is-hot" : ""}" type="button" data-box="${esc(b.id)}"><span class="bn">${tag(b)}</span>${b.cat ? `<span class="bc">${esc(b.cat)}</span>` : `<span class="bc is-empty">Contents to add</span>`}<span class="st st-${st}">${STEP_NAME[st]}</span></button></li>`; };
   function renderRegister() {
     if (!loaded) return;
     const all = list(), tst = tests();
@@ -365,7 +405,6 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
       const r = await api("/api/boxes?test=1", { method: "DELETE" });
       Object.keys(boxes).forEach((id) => { if (boxes[id].test) delete boxes[id]; });
       if (current && !boxes[current]) current = null;
-      tray = tray.filter((id) => boxes[id]); saveTray();
       toast(`Deleted ${plural(r.deleted || 0, "test label", "test labels")}. Test numbers start again at T001.`);
       render();
     } catch (err) { toast("Couldn't delete the test labels."); }
@@ -397,7 +436,10 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     c.fillStyle = "#FFFFFF"; c.fillRect(0, 0, W, H);
     const ink = ghost ? "#9A9A9A" : "#000000";
     const numTxt = box && box.n ? tag(box) : "000";
-    const cat = (box && box.cat ? String(box.cat) : "Contents").toUpperCase();
+    // A real label with no contents gets a write-in line for a marker instead.
+    const blank = !ghost && !(box && box.cat);
+    const cat = blank ? "" : (box && box.cat ? String(box.cat) : "Contents").toUpperCase();
+    const writeIn = (x, y, w, h) => { c.fillStyle = ink; c.fillRect(x, y + Math.round(h * 0.85), w, Math.max(3, Math.round(h * 0.06))); };
     const dest = box && box.dest ? labelRoom(box.dest).toUpperCase() : "ROOM?";
     const qr = box && box.n ? qrMatrix(BASE + "/b/" + tag(box)) : null;
     c.textBaseline = "top";
@@ -407,8 +449,8 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
       const fsN = fitFont(c, numTxt, W - 2 * pad, W * 0.36);
       c.fillText(numTxt, pad, pad);
       let y = pad + Math.round(fsN * 0.95);
-      const fsC = fitFont(c, cat, W - 2 * pad, W * 0.11);
-      c.fillText(cat, pad, y);
+      const fsC = blank ? Math.round(W * 0.11) : fitFont(c, cat, W - 2 * pad, W * 0.11);
+      if (blank) writeIn(pad, y, W - 2 * pad, fsC); else c.fillText(cat, pad, y);
       y += Math.round(fsC * 1.25);
       const avail = H - barH - y - pad, sz = Math.min(W - 2 * pad, avail);
       if (qr && sz > 60) drawQR(c, qr, Math.round((W - sz) / 2), y + Math.round((avail - sz) / 2), sz, ink);
@@ -424,8 +466,9 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     const fsN = fitFont(c, numTxt, textW, H * 0.4);
     c.fillText(numTxt, pad, Math.round(pad * 0.6));
     const top = Math.round(pad * 0.6 + fsN * 0.92), bottom = H - barH - Math.round(pad * 0.5);
-    const fsC = fitFont(c, cat, textW, Math.max(12, Math.min(bottom - top, H * 0.16)));
-    c.fillText(cat, pad, top + Math.max(0, Math.round((bottom - top - fsC) / 2)));
+    const fsC = blank ? Math.round(Math.max(12, Math.min(bottom - top, H * 0.16))) : fitFont(c, cat, textW, Math.max(12, Math.min(bottom - top, H * 0.16)));
+    if (blank) writeIn(pad, top + Math.max(0, Math.round((bottom - top - fsC) / 2)), textW, fsC);
+    else c.fillText(cat, pad, top + Math.max(0, Math.round((bottom - top - fsC) / 2)));
     if (q) drawQR(c, qr, W - pad - q, Math.round(pad * 0.4), q, ink);
     c.fillStyle = ink; c.fillRect(0, H - barH, W, barH);
     c.fillStyle = "#FFFFFF";
@@ -443,53 +486,133 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     $("#cpN").textContent = copies === 1 ? "1 side" : `${copies} sides`;
     $("#cpMinus").disabled = copies <= 1; $("#cpPlus").disabled = copies >= MAX_COPIES;
     const sheet = size === "a4";
-    $("#lbPrint").textContent = sheet ? `Add ${copies} to sheet` : copies === 1 ? "Print" : `Print ${copies}`;
+    $("#lbPrint").textContent = sheet ? "Print on its own sheet" : copies === 1 ? "Print" : `Print ${copies}`;
     $("#lbShare").hidden = sheet; $("#lbSave").hidden = sheet;
     $("#lbHint").textContent = cur
-      ? `Box ${tag(cur)} is ready.${copies > 1 ? ` Stick one on each of ${copies} sides; every copy scans as the same box.` : ""} ${sheet ? "Add it to the sheet, then print once the sheet is full." : "Change the fields to start the next one."}`
+      ? `Box ${tag(cur)} is ready${cur.printedAt ? "" : " and waiting in To print"}.${copies > 1 ? ` Stick one on each of ${copies} sides; every copy scans as the same box.` : ""} Change the fields to start the next one.`
       : "Numbers come from one shared counter, so two people can never get the same one.";
-    renderTray();
+    if (loaded) renderQueue();
   }
 
-  // ---------- A4 sheet tray: labels queue up until there are enough to fill a sheet ----------
-  let tray = [], trayPrinted = false;
-  try { tray = JSON.parse(localStorage.getItem("sheetTray") || "[]"); if (!Array.isArray(tray)) tray = []; } catch (e) { tray = []; }
-  const saveTray = () => { try { localStorage.setItem("sheetTray", JSON.stringify(tray)); } catch (e) {} };
-  function renderTray() {
-    const el = $("#tray");
-    tray = tray.filter((id) => boxes[id] || !loaded);
-    el.hidden = size !== "a4" || !tray.length;
-    if (el.hidden) return;
-    const counts = {};
-    tray.forEach((id) => { counts[id] = (counts[id] || 0) + 1; });
-    const sheets = Math.ceil(tray.length / 4), free = sheets * 4 - tray.length;
-    const who = Object.entries(counts).map(([id, n]) => `<b>${tag(boxes[id])}</b>${n > 1 ? " ×" + n : ""}`).join(", ");
-    $("#trayText").innerHTML = trayPrinted
-      ? `Sheet printed. Clear it once the labels look right, or print it again.`
-      : `On the sheet: ${who}. ${tray.length} of ${sheets * 4} labels${free ? `, ${free} still free` : ", sheet full"}.`;
-    $("#trayPrint").textContent = sheets > 1 ? `Print ${sheets} sheets` : "Print sheet";
-  }
-  $("#trayClear").addEventListener("click", () => { tray = []; trayPrinted = false; saveTray(); renderTray(); });
-  $("#trayPrint").addEventListener("click", () => {
-    const ids = tray.filter((id) => boxes[id]);
-    if (!ids.length) return;
-    const cache = {}, work = document.createElement("canvas");
-    const src = (id) => cache[id] || (drawLabel(work, Object.assign({ id }, boxes[id]), false), (cache[id] = work.toDataURL("image/png")));
-    let html = "";
-    for (let i = 0; i < ids.length; i += 4) {
-      html += `<div class="sheet">${ids.slice(i, i + 4).map((id, k) => `<img src="${src(id)}" alt="" style="left:${SHEET.slots[k][0]}mm;top:${SHEET.slots[k][1]}mm">`).join("")}</div>`;
-    }
+  // ---------- Printing: one routine for a single box or the whole queue ----------
+  // 4x6 and small sizes print one label per page; A4 lays labels 2 x 2 on Avery L7169 sheets.
+  function printIds(ids) {
+    const work = document.createElement("canvas"), urls = [];
+    ids.forEach((id) => {
+      drawLabel(work, Object.assign({ id }, boxes[id]), false);
+      const u = work.toDataURL("image/png");
+      for (let i = 0; i < copies; i++) urls.push(u);
+    });
     let st = document.getElementById("pageSize");
     if (!st) { st = document.createElement("style"); st.id = "pageSize"; document.head.appendChild(st); }
-    st.textContent = `@media print { @page { size: A4 portrait; margin: 0; } #printArea .sheet { position: relative; width: 210mm; height: 296mm; overflow: hidden; break-after: page; page-break-after: always; } #printArea .sheet:last-child { break-after: auto; page-break-after: auto; } #printArea .sheet img { position: absolute; width: ${SHEET.w}mm; height: ${SHEET.h}mm; } }`;
+    let html = "";
+    if (size === "a4") {
+      for (let i = 0; i < urls.length; i += 4) {
+        html += `<div class="sheet">${urls.slice(i, i + 4).map((u, k) => `<img src="${u}" alt="" style="left:${SHEET.slots[k][0]}mm;top:${SHEET.slots[k][1]}mm">`).join("")}</div>`;
+      }
+      st.textContent = `@media print { @page { size: A4 portrait; margin: 0; } #printArea .sheet { position: relative; width: 210mm; height: 296mm; overflow: hidden; break-after: page; page-break-after: always; } #printArea .sheet:last-child { break-after: auto; page-break-after: auto; } #printArea .sheet img { position: absolute; width: ${SHEET.w}mm; height: ${SHEET.h}mm; } }`;
+    } else {
+      const [w, h] = SIZES[size];
+      html = urls.map((u) => `<img src="${u}" alt="">`).join("");
+      st.textContent = `@media print { @page { size: ${w}mm ${h}mm; margin: 0; } #printArea img { width: ${w}mm; height: ${h}mm; break-after: page; page-break-after: always; } #printArea img:last-child { break-after: auto; page-break-after: auto; } }`;
+    }
     $("#printArea").innerHTML = html;
     drawPreview();
-    setTimeout(() => { window.print(); trayPrinted = true; renderTray(); }, 50);
+    setTimeout(() => window.print(), 50);
+  }
+  async function markPrinted(ids, printed) {
+    if (!ids.length) return;
+    try {
+      const r = await api("/api/boxes/printed", { method: "POST", body: JSON.stringify({ ids, printed: printed !== false }) });
+      ids.forEach((id) => { if (boxes[id]) boxes[id].printedAt = r.printedAt; });
+    } catch (e) { toast("Couldn't update the print list. It'll catch up on the next refresh."); }
+    render();
+  }
+
+  // ---------- To print: every label not printed yet, shared across phones and computers ----------
+  let lastBatch = [];
+  const queue = () => all_().filter((b) => !b.printedAt).sort((a, b) => (a.test ? 1 : 0) - (b.test ? 1 : 0) || num(a.n) - num(b.n));
+  function ranges(rows) {
+    const out = [];
+    let s = null, p = null;
+    const flush = () => { if (s) out.push(s === p ? tag(s) : `${tag(s)}–${tag(p)}`); };
+    rows.forEach((b) => { if (s && !!b.test === !!p.test && num(b.n) === num(p.n) + 1) p = b; else { flush(); s = p = b; } });
+    flush();
+    return out;
+  }
+  function renderQueue() {
+    const q = queue(), card = $("#queueCard");
+    card.hidden = !q.length && !lastBatch.length;
+    if (card.hidden) return;
+    const labels = q.length * copies, sizeName = $("#lbSize").selectedOptions[0] ? $("#lbSize").selectedOptions[0].textContent : size;
+    const sheets = size === "a4" ? Math.ceil(labels / 4) : 0;
+    $("#queueText").innerHTML = q.length
+      ? `${plural(q.length, "label", "labels")} waiting: ${ranges(q).map((r) => `<b>${r}</b>`).join(", ")}. At ${esc(sizeName)} and ${plural(copies, "side", "sides")} that's ${plural(labels, "label", "labels")}${sheets ? ` on ${plural(sheets, "sheet", "sheets")}` : ""}.`
+      : "Nothing waiting to print.";
+    $("#queuePrint").textContent = q.length ? `Print all ${labels}` : "Print all";
+    $("#queuePrint").disabled = !q.length; $("#queueSkip").disabled = !q.length;
+    $("#queueConfirm").hidden = !lastBatch.length;
+    if (lastBatch.length) $("#queueConfirmText").textContent = `Did all ${plural(lastBatch.length, "box", "boxes")} print OK? If some didn't, keep them on the list and reprint.`;
+  }
+  $("#queuePrint").addEventListener("click", () => {
+    const ids = queue().map((b) => b.id);
+    if (!ids.length) return;
+    lastBatch = ids;
+    printIds(ids);
+    renderQueue();
+  });
+  $("#queueOk").addEventListener("click", async () => { const ids = lastBatch; lastBatch = []; await markPrinted(ids, true); toast(`${plural(ids.length, "box", "boxes")} taken off the print list.`); });
+  $("#queueNo").addEventListener("click", () => { lastBatch = []; renderQueue(); });
+  let skipArmed = false, skipT;
+  $("#queueSkip").addEventListener("click", async () => {
+    if (!skipArmed) { skipArmed = true; $("#queueSkip").textContent = "Tap again to confirm"; clearTimeout(skipT); skipT = setTimeout(() => { skipArmed = false; $("#queueSkip").textContent = "Mark all as printed"; }, 3000); return; }
+    skipArmed = false; $("#queueSkip").textContent = "Mark all as printed";
+    const ids = queue().map((b) => b.id); lastBatch = [];
+    await markPrinted(ids, true);
+  });
+
+  // ---------- Make several: a list of room + what + how many, created in one go ----------
+  let staged = [], mCount = 4;
+  function renderMany() {
+    $("#mN").textContent = String(mCount);
+    $("#mMinus").disabled = mCount <= 1; $("#mPlus").disabled = mCount >= 20;
+    $("#mList").innerHTML = staged.map((s, i) => `<li><b>×${s.count}</b><span>${esc(s.cat || "Contents to add")} → ${esc(roomName(s.dest) || "No room yet")}</span><button class="linkbtn" type="button" data-unstage="${i}">Remove</button></li>`).join("");
+    const total = staged.reduce((t, s) => t + s.count, 0), test = $("#mTest").checked;
+    const first = nextOf(test ? tests() : list());
+    $("#mCreate").disabled = !total;
+    $("#mCreate").textContent = total
+      ? `Create ${plural(total, "label", "labels")}: ${test ? "T" : ""}${pad3(first)}${total > 1 ? `–${test ? "T" : ""}${pad3(first + total - 1)}` : ""}`
+      : "Create labels";
+  }
+  $("#mMinus").addEventListener("click", () => { mCount = Math.max(1, mCount - 1); renderMany(); });
+  $("#mPlus").addEventListener("click", () => { mCount = Math.min(20, mCount + 1); renderMany(); });
+  $("#mTest").addEventListener("change", renderMany);
+  $("#mAdd").addEventListener("click", () => {
+    const dest = $("#mRoom").value || null, cat = $("#mWhat").value.trim();
+    if (!dest) { toast("Pick a room first."); $("#mRoom").focus(); return; }
+    staged.push({ dest, cat, count: mCount });
+    $("#mWhat").value = "";
+    renderMany();
+  });
+  $("#mList").addEventListener("click", (e) => { const b = e.target.closest("[data-unstage]"); if (!b) return; staged.splice(Number(b.dataset.unstage), 1); renderMany(); });
+  $("#mCreate").addEventListener("click", async () => {
+    const items = staged.flatMap((s) => Array.from({ length: s.count }, () => ({ cat: s.cat, dest: s.dest })));
+    if (!items.length) return;
+    const btn = $("#mCreate"); btn.disabled = true;
+    try {
+      const r = await api("/api/boxes/batch", { method: "POST", body: JSON.stringify({ items, test: $("#mTest").checked }) });
+      Object.assign(boxes, r.boxes);
+      const made = Object.entries(r.boxes).map(([id, b]) => Object.assign({ id }, b)).sort((a, b) => num(a.n) - num(b.n));
+      staged = [];
+      toast(`Created ${plural(made.length, "label", "labels")}: ${ranges(made).join(", ")}. They're waiting in To print.`);
+      render(); refresh();
+      $("#queueCard").scrollIntoView({ behavior: "smooth", block: "center" });
+    } catch (e) { toast("Couldn't create them: " + e.message); renderMany(); }
   });
   function setCopies(n) {
     copies = Math.min(MAX_COPIES, Math.max(1, n));
     try { localStorage.setItem("labelCopies", String(copies)); } catch (e) {}
-    drawPreview();
+    drawPreview(); renderQueue();
   }
   $("#cpMinus").addEventListener("click", () => setCopies(copies - 1));
   $("#cpPlus").addEventListener("click", () => setCopies(copies + 1));
@@ -567,23 +690,9 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     return blob ? new File([blob], base + ".png", { type: "image/png" }) : null;
   }
   $("#lbPrint").addEventListener("click", () => {
-    if (size === "a4") {
-      if (!current || !boxes[current]) return;
-      if (trayPrinted) { tray = []; trayPrinted = false; }
-      for (let i = 0; i < copies; i++) tray.push(current);
-      saveTray(); renderTray();
-      const free = Math.ceil(tray.length / 4) * 4 - tray.length;
-      toast(`Box ${tag(boxes[current])} added. ${free ? `${free} label${free === 1 ? "" : "s"} still free on the sheet.` : "The sheet is full, ready to print."}`);
-      return;
-    }
-    const [w, h] = SIZES[size];
-    const url = $("#lbCanvas").toDataURL("image/png");
-    let st = document.getElementById("pageSize");
-    if (!st) { st = document.createElement("style"); st.id = "pageSize"; document.head.appendChild(st); }
-    // One label per page, so the M6 feeds one die-cut 4x6 label for each copy.
-    st.textContent = `@media print { @page { size: ${w}mm ${h}mm; margin: 0; } #printArea img { width: ${w}mm; height: ${h}mm; break-after: page; page-break-after: always; } #printArea img:last-child { break-after: auto; page-break-after: auto; } }`;
-    $("#printArea").innerHTML = Array.from({ length: copies }, () => `<img src="${url}" alt="">`).join("");
-    setTimeout(() => window.print(), 50);
+    if (!current || !boxes[current]) return;
+    printIds([current]);
+    if (!boxes[current].printedAt) markPrinted([current], true);
   });
   $("#lbShare").addEventListener("click", async () => {
     const b = boxes[current]; if (!b) return;

@@ -27,6 +27,10 @@ Until step 3 is done, `/api/lists/*` returns 403. The account and policy numbers
 
 ## Printing labels
 
+**Making labels in bulk:** under Make several labels, add rows of room, what (optional) and how many, for example Kitchen × 4 or Desk → Studio × 1, then create them all at once with consecutive numbers. If you leave What blank, the label gets a line to write the contents on.
+
+**To print:** every new label waits there until it's printed. The list is shared, so labels made on a phone can be printed from the Mac. Print all uses the size and sides chosen in New box label. Once you confirm the labels printed OK, they come off the list. Printing a single box with its own Print button takes it off the list straight away.
+
 To try a printer or the scanning without using up box numbers, tick **Test label** before creating. Test labels are numbered T001, T002… and print and scan like real ones. **Delete all**, next to Test labels at the bottom of the box list, clears them and starts test numbering again at T001.
 
 - **Any home printer, from a phone or computer:** choose A4 sheet, 4 labels. Each box goes onto the sheet with Add to sheet, and Print sheet prints once there are enough to fill it, onto Avery L7169 (99.1 × 139 mm, 4 per A4) or plain paper. Print it at 100% / Actual size, never Fit to page. A USB printer on a Mac can be shared to iPhones with Printer Sharing (System Settings → General → Sharing), after which it shows up under AirPrint.
@@ -63,6 +67,8 @@ npx wrangler d1 execute move --local --file=seed.sql
 | POST | `/api/boxes` | `{cat, dest}`. The number comes from an atomic counter in D1, so two phones never get the same one |
 | PATCH | `/api/boxes/:id` | `{cat?, dest?, status?, resetScan?}` |
 | DELETE | `/api/boxes/:id` | The number is never reused |
+| POST | `/api/boxes/batch` | `{items: [{cat, dest}], test?}`. Up to 100 labels, consecutive numbers |
+| POST | `/api/boxes/printed` | `{ids, printed?}`. Marks labels printed; unprinted ones make up the To print list |
 | DELETE | `/api/boxes?test=1` | Deletes every test label (T001…) and restarts test numbering |
 | POST | `/api/scan/:id` | Moves the box one step. Returns `moved`, `recent` (within 15 s) or `done` |
 | GET | `/api/lists/state` | Checklist items and settings (Access only) |
