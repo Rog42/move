@@ -28,7 +28,9 @@ Until step 3 is done, `/api/lists/*` returns 403. The account and policy numbers
 ## Printing labels
 
 - **HotLabel M6 (USB):** open move.rog42.net on the computer the M6 is plugged into. Choose 4 × 6 in, set how many sides, then tap Print. Each copy prints as its own 4×6 page. In the print dialog, pick the M6, set the paper to 4×6 / 100×150 mm, and set margins to None at 100% scale.
-- **Mini Bluetooth printer:** choose the 48 mm roll, then Share image or Save image. With more than one side, the image is a single strip of copies with dashed cut lines. Print it from the printer's app.
+- **MUNBYN 130B or another Bluetooth 4×6 printer, from a phone:** choose 4 × 6 in, set the sides, then tap Share and pick the printer's app (MUNBYN Print). You get a PDF with one exact 4×6 page per copy. The phone's Print button can't see Bluetooth label printers.
+- **Mini Bluetooth printer:** choose the 48 mm roll, then Share or Save. With more than one side, the image is a single strip of copies with dashed cut lines. Print it from the printer's app.
+- The small die-cut sizes also share as a PDF, one page per copy.
 - Every copy of a label carries the same QR code.
 
 ## Local development

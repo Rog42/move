@@ -193,8 +193,8 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
         </div>
         <div class="row">
           <button class="btn" type="button" id="lbPrint" disabled>Print</button>
-          <button class="btn" type="button" id="lbShare" disabled>Share image</button>
-          <button class="btn" type="button" id="lbSave" disabled>Save image</button>
+          <button class="btn" type="button" id="lbShare" disabled>Share</button>
+          <button class="btn" type="button" id="lbSave" disabled>Save</button>
         </div>
       </figure>
     </div>
@@ -451,8 +451,43 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     } catch (e) { toast("Couldn't create the box: " + e.message); }
     finally { btn.disabled = false; }
   });
-  function canvasBlob() { return new Promise((res) => stripCanvas().toBlob(res, "image/png")); }
-  const fileName = (b) => `box-${pad3(b.n)}${copies > 1 ? "-x" + copies : ""}.png`;
+  // Continuous rolls get one PNG strip. Die-cut labels (4x6 and the small sizes) get a PDF
+  // with one exact-size page per copy, which is what printer apps such as MUNBYN Print expect.
+  const isRoll = () => size === "48x30";
+  function labelPdf() {
+    const cv = $("#lbCanvas"), [wmm, hmm] = SIZES[size];
+    const W = +(wmm * 72 / 25.4).toFixed(2), H = +(hmm * 72 / 25.4).toFixed(2);
+    // 1-bit image: crisp for thermal heads and small (about 120 KB for 4x6 at 203 dpi).
+    const { data } = cv.getContext("2d").getImageData(0, 0, cv.width, cv.height);
+    const rowBytes = Math.ceil(cv.width / 8), bits = new Uint8Array(rowBytes * cv.height);
+    for (let y = 0; y < cv.height; y++) for (let x = 0; x < cv.width; x++) {
+      const i = (y * cv.width + x) * 4;
+      if (data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114 >= 128) bits[y * rowBytes + (x >> 3)] |= 0x80 >> (x & 7);
+    }
+    const enc = new TextEncoder(), parts = [], offsets = [];
+    let len = 0;
+    const push = (v) => { const u = typeof v === "string" ? enc.encode(v) : v; parts.push(u); len += u.length; };
+    const obj = (n, body) => { offsets[n] = len; push(`${n} 0 obj\n`); body(); push("\nendobj\n"); };
+    const pages = Array.from({ length: copies }, (_, i) => 5 + i);
+    const draw = `q ${W} 0 0 ${H} 0 0 cm /Im0 Do Q`;
+    push("%PDF-1.4\n");
+    obj(1, () => push("<< /Type /Catalog /Pages 2 0 R >>"));
+    obj(2, () => push(`<< /Type /Pages /Count ${pages.length} /Kids [${pages.map((p) => p + " 0 R").join(" ")}] >>`));
+    obj(3, () => { push(`<< /Type /XObject /Subtype /Image /Width ${cv.width} /Height ${cv.height} /ColorSpace /DeviceGray /BitsPerComponent 1 /Length ${bits.length} >>\nstream\n`); push(bits); push("\nendstream"); });
+    obj(4, () => push(`<< /Length ${draw.length} >>\nstream\n${draw}\nendstream`));
+    pages.forEach((p) => obj(p, () => push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${W} ${H}] /Resources << /XObject << /Im0 3 0 R >> >> /Contents 4 0 R >>`)));
+    const count = 5 + pages.length, xref = len;
+    let tail = `xref\n0 ${count}\n0000000000 65535 f \n`;
+    for (let i = 1; i < count; i++) tail += String(offsets[i]).padStart(10, "0") + " 00000 n \n";
+    push(tail + `trailer\n<< /Size ${count} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`);
+    return new Blob(parts, { type: "application/pdf" });
+  }
+  async function labelFile(b) {
+    const base = `box-${pad3(b.n)}${copies > 1 ? "-x" + copies : ""}`;
+    if (!isRoll()) return new File([labelPdf()], base + ".pdf", { type: "application/pdf" });
+    const blob = await new Promise((res) => stripCanvas().toBlob(res, "image/png"));
+    return blob ? new File([blob], base + ".png", { type: "image/png" }) : null;
+  }
   $("#lbPrint").addEventListener("click", () => {
     const [w, h] = SIZES[size];
     const url = $("#lbCanvas").toDataURL("image/png");
@@ -465,17 +500,16 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
   });
   $("#lbShare").addEventListener("click", async () => {
     const b = boxes[current]; if (!b) return;
-    const blob = await canvasBlob(); if (!blob) return;
-    const file = new File([blob], fileName(b), { type: "image/png" });
+    const file = await labelFile(b); if (!file) return;
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      try { await navigator.share({ files: [file], title: `Box ${pad3(b.n)}` }); } catch (e) { if (e && e.name !== "AbortError") toast("Sharing didn't work. Try Save image."); }
-    } else toast("This browser can't share images. Use Save image or Print.");
+      try { await navigator.share({ files: [file], title: `Box ${pad3(b.n)}` }); } catch (e) { if (e && e.name !== "AbortError") toast("Sharing didn't work. Try Save."); }
+    } else toast("This browser can't share files. Use Save or Print.");
   });
   $("#lbSave").addEventListener("click", async () => {
     const b = boxes[current]; if (!b) return;
-    const blob = await canvasBlob(); if (!blob) return;
+    const file = await labelFile(b); if (!file) return;
     const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob); a.download = fileName(b);
+    a.href = URL.createObjectURL(file); a.download = file.name;
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 4000);
   });
