@@ -8,7 +8,7 @@
 //   PATCH  /api/boxes/:id             change cat / dest / status
 //   DELETE /api/boxes/:id             remove a box (its number is never reused)
 //   DELETE /api/boxes?test=1          remove every test label (T001...) and restart test numbering
-//   POST   /api/scan/:id              move a box one step: labelled > packed > loaded > inroom
+//   POST   /api/scan/:id              move a box one step: labelled > packed > loaded > inroom > unpacked
 //
 // Checklists. Closed until Cloudflare Access is set up (ACCESS_TEAM_DOMAIN) or LISTS_OPEN=1; see lib/access.js:
 //   GET    /api/lists/state           items + meta
@@ -19,7 +19,7 @@
 
 import { listsAccess } from "./access.js";
 
-const STEPS = ["labelled", "packed", "loaded", "inroom"];
+const STEPS = ["labelled", "packed", "loaded", "inroom", "unpacked"];
 const SCAN_GUARD_MS = 15000;
 const LIST_COLS = new Set(["items", "meta"]);
 const ID_RE = /^[A-Za-z0-9_\-.~:@+]{1,120}$/;

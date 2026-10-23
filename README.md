@@ -7,10 +7,10 @@ It runs as a single Cloudflare Worker: static files from `public/`, the API in `
 | --- | --- | --- |
 | `/` | Box scanning, new labels, every box grouped by Savoy room | Anyone with the link |
 | `/b/014` | Where each label's QR code points. Opening it moves box 014 one step | Anyone with the link |
-| `/board` | Kanban of Packed, Loaded and In room for a tablet or laptop at each house. Refreshes every 3 seconds, keeps the screen awake, and has a QR code so helpers can open the scanner | Anyone with the link |
+| `/board` | Kanban of Packed, Loaded, In room and Unpacked, with a % full tile per room, for a tablet or laptop at each house. Refreshes every 3 seconds, keeps the screen awake, and has a QR code so helpers can open the scanner | Anyone with the link |
 | `/lists` | Utilities and address-change checklists | Locked until Cloudflare Access is set up (see below) |
 
-Each scan moves a box one step: **labelled → packed → loaded → in room**. A second scan of the same box within 15 seconds is ignored. That means a box with labels on several sides can be turned over and scanned again without skipping a step.
+Each scan moves a box one step: **labelled → packed → loaded → in room → unpacked**. The last scan is for when it's been emptied, or for furniture once it's set up. A second scan of the same box within 15 seconds is ignored. That means a box with labels on several sides can be turned over and scanned again without skipping a step.
 
 ## Deploy (one-off)
 
