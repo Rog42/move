@@ -79,6 +79,8 @@ input[type="text"], input[inputmode], select { width: 100%; min-width: 0; paddin
 .copies { display: flex; align-items: center; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
 .copies button { border: 0; background: none; width: 36px; height: 34px; font-size: 18px; font-weight: 600; color: var(--accent); }
 .copies button:disabled { color: var(--muted); opacity: .5; cursor: default; }
+.tray { border: 1px dashed var(--line); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; font-size: 13.5px; }
+.tray b { font-family: var(--f-mono); font-weight: 500; }
 .copies output { min-width: 4.6em; text-align: center; font-size: 13.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
 
 .filters { display: flex; gap: 6px; flex-wrap: wrap; }
@@ -180,6 +182,7 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
         <div class="opts">
           <select id="lbSize" aria-label="Label size">
             <option value="100x150">4 × 6 in (M6)</option>
+            <option value="a4">A4 sheet, 4 labels (Avery L7169)</option>
             <option value="48x30">Mini printer, 48 mm roll</option>
             <option value="50x30">50 × 30 mm</option>
             <option value="40x30">40 × 30 mm</option>
@@ -195,6 +198,13 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
           <button class="btn" type="button" id="lbPrint" disabled>Print</button>
           <button class="btn" type="button" id="lbShare" disabled>Share</button>
           <button class="btn" type="button" id="lbSave" disabled>Save</button>
+        </div>
+        <div class="tray" id="tray" hidden>
+          <span id="trayText"></span>
+          <div class="row">
+            <button class="btn btn-primary" type="button" id="trayPrint">Print sheet</button>
+            <button class="btn" type="button" id="trayClear">Clear sheet</button>
+          </div>
         </div>
       </figure>
     </div>
@@ -242,7 +252,9 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
   const BASE = LOCAL ? location.origin : "https://move.rog42.net";
   const STEPS = [["labelled", "Labelled"], ["packed", "Packed"], ["loaded", "Loaded"], ["inroom", "In room"]];
   const STEP_NAME = Object.fromEntries(STEPS);
-  const SIZES = { "100x150": [100, 150], "48x30": [48, 30], "50x30": [50, 30], "40x30": [40, 30], "50x20": [50, 20] };
+  const SIZES = { "100x150": [100, 150], "a4": [99, 139], "48x30": [48, 30], "50x30": [50, 30], "40x30": [40, 30], "50x20": [50, 20] };
+  // Avery L7169 and lookalikes: 4 labels of 99.1 x 139 mm on A4, 2 across and 2 down.
+  const SHEET = { w: 99.1, h: 139, slots: [[4.65, 9.5], [106.25, 9.5], [4.65, 148.5], [106.25, 148.5]] };
   const DEFAULT_CATS = ["Kitchenware", "Pantry", "Crockery", "Glassware", "Books", "Linen", "Clothes", "Shoes", "Toiletries", "Office", "Electronics", "Cables", "Music", "Sheet music", "Craft", "Fabric", "Tools", "Garden", "Decor", "Photos", "Documents", "Toys"];
 
   const $ = (s) => document.querySelector(s);
@@ -404,11 +416,50 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     ["#lbPrint", "#lbShare", "#lbSave"].forEach((s) => ($(s).disabled = !cur));
     $("#cpN").textContent = copies === 1 ? "1 side" : `${copies} sides`;
     $("#cpMinus").disabled = copies <= 1; $("#cpPlus").disabled = copies >= MAX_COPIES;
-    $("#lbPrint").textContent = copies === 1 ? "Print" : `Print ${copies}`;
+    const sheet = size === "a4";
+    $("#lbPrint").textContent = sheet ? `Add ${copies} to sheet` : copies === 1 ? "Print" : `Print ${copies}`;
+    $("#lbShare").hidden = sheet; $("#lbSave").hidden = sheet;
     $("#lbHint").textContent = cur
-      ? `Box ${pad3(cur.n)} is ready.${copies > 1 ? ` Stick one on each of ${copies} sides; every copy scans as the same box.` : ""} Change the fields to start the next one.`
+      ? `Box ${pad3(cur.n)} is ready.${copies > 1 ? ` Stick one on each of ${copies} sides; every copy scans as the same box.` : ""} ${sheet ? "Add it to the sheet, then print once the sheet is full." : "Change the fields to start the next one."}`
       : "Numbers come from one shared counter, so two people can never get the same one.";
+    renderTray();
   }
+
+  // ---------- A4 sheet tray: labels queue up until there are enough to fill a sheet ----------
+  let tray = [], trayPrinted = false;
+  try { tray = JSON.parse(localStorage.getItem("sheetTray") || "[]"); if (!Array.isArray(tray)) tray = []; } catch (e) { tray = []; }
+  const saveTray = () => { try { localStorage.setItem("sheetTray", JSON.stringify(tray)); } catch (e) {} };
+  function renderTray() {
+    const el = $("#tray");
+    tray = tray.filter((id) => boxes[id] || !loaded);
+    el.hidden = size !== "a4" || !tray.length;
+    if (el.hidden) return;
+    const counts = {};
+    tray.forEach((id) => { counts[id] = (counts[id] || 0) + 1; });
+    const sheets = Math.ceil(tray.length / 4), free = sheets * 4 - tray.length;
+    const who = Object.entries(counts).map(([id, n]) => `<b>${pad3(boxes[id] ? boxes[id].n : 0)}</b>${n > 1 ? " ×" + n : ""}`).join(", ");
+    $("#trayText").innerHTML = trayPrinted
+      ? `Sheet printed. Clear it once the labels look right, or print it again.`
+      : `On the sheet: ${who}. ${tray.length} of ${sheets * 4} labels${free ? `, ${free} still free` : ", sheet full"}.`;
+    $("#trayPrint").textContent = sheets > 1 ? `Print ${sheets} sheets` : "Print sheet";
+  }
+  $("#trayClear").addEventListener("click", () => { tray = []; trayPrinted = false; saveTray(); renderTray(); });
+  $("#trayPrint").addEventListener("click", () => {
+    const ids = tray.filter((id) => boxes[id]);
+    if (!ids.length) return;
+    const cache = {}, work = document.createElement("canvas");
+    const src = (id) => cache[id] || (drawLabel(work, Object.assign({ id }, boxes[id]), false), (cache[id] = work.toDataURL("image/png")));
+    let html = "";
+    for (let i = 0; i < ids.length; i += 4) {
+      html += `<div class="sheet">${ids.slice(i, i + 4).map((id, k) => `<img src="${src(id)}" alt="" style="left:${SHEET.slots[k][0]}mm;top:${SHEET.slots[k][1]}mm">`).join("")}</div>`;
+    }
+    let st = document.getElementById("pageSize");
+    if (!st) { st = document.createElement("style"); st.id = "pageSize"; document.head.appendChild(st); }
+    st.textContent = `@media print { @page { size: A4 portrait; margin: 0; } #printArea .sheet { position: relative; width: 210mm; height: 296mm; overflow: hidden; break-after: page; page-break-after: always; } #printArea .sheet:last-child { break-after: auto; page-break-after: auto; } #printArea .sheet img { position: absolute; width: ${SHEET.w}mm; height: ${SHEET.h}mm; } }`;
+    $("#printArea").innerHTML = html;
+    drawPreview();
+    setTimeout(() => { window.print(); trayPrinted = true; renderTray(); }, 50);
+  });
   function setCopies(n) {
     copies = Math.min(MAX_COPIES, Math.max(1, n));
     try { localStorage.setItem("labelCopies", String(copies)); } catch (e) {}
@@ -489,6 +540,15 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     return blob ? new File([blob], base + ".png", { type: "image/png" }) : null;
   }
   $("#lbPrint").addEventListener("click", () => {
+    if (size === "a4") {
+      if (!current || !boxes[current]) return;
+      if (trayPrinted) { tray = []; trayPrinted = false; }
+      for (let i = 0; i < copies; i++) tray.push(current);
+      saveTray(); renderTray();
+      const free = Math.ceil(tray.length / 4) * 4 - tray.length;
+      toast(`Box ${pad3(boxes[current].n)} added. ${free ? `${free} label${free === 1 ? "" : "s"} still free on the sheet.` : "The sheet is full, ready to print."}`);
+      return;
+    }
     const [w, h] = SIZES[size];
     const url = $("#lbCanvas").toDataURL("image/png");
     let st = document.getElementById("pageSize");

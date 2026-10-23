@@ -27,6 +27,7 @@ Until step 3 is done, `/api/lists/*` returns 403. The account and policy numbers
 
 ## Printing labels
 
+- **Any home printer, from a phone or computer:** choose A4 sheet, 4 labels. Each box goes onto the sheet with Add to sheet, and Print sheet prints once there are enough to fill it, onto Avery L7169 (99.1 × 139 mm, 4 per A4) or plain paper. Print it at 100% / Actual size, never Fit to page. A USB printer on a Mac can be shared to iPhones with Printer Sharing (System Settings → General → Sharing), after which it shows up under AirPrint.
 - **HotLabel M6 (USB):** open move.rog42.net on the computer the M6 is plugged into. Choose 4 × 6 in, set how many sides, then tap Print. Each copy prints as its own 4×6 page. In the print dialog, pick the M6, set the paper to 4×6 / 100×150 mm, and set margins to None at 100% scale.
 - **MUNBYN 130B or another Bluetooth 4×6 printer, from a phone:** choose 4 × 6 in, set the sides, then tap Share and pick the printer's app (MUNBYN Print). You get a PDF with one exact 4×6 page per copy. The phone's Print button can't see Bluetooth label printers.
 - **Mini Bluetooth printer:** choose the 48 mm roll, then Share or Save. With more than one side, the image is a single strip of copies with dashed cut lines. Print it from the printer's app.
