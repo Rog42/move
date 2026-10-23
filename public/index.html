@@ -40,6 +40,7 @@ h1, h2, h3 { margin: 0; text-wrap: balance; }
 .brand { display: flex; flex-direction: column; text-decoration: none; color: var(--ink); line-height: 1.2; }
 .brand b { font-size: 18px; letter-spacing: -.01em; }
 .brand span { font-size: 12.5px; color: var(--muted); }
+.navs { display: flex; gap: 14px; }
 .navlink { color: var(--accent); font-weight: 600; font-size: 14px; text-underline-offset: 3px; }
 
 .counts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
@@ -159,7 +160,7 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
 <header class="top">
   <div class="wrap top-in">
     <a class="brand" href="/"><b>Move boxes</b><span>133 Oratava → 12 Savoy Court · Sat 7 Nov</span></a>
-    <a class="navlink" href="/lists">Checklists</a>
+    <nav class="navs"><a class="navlink" href="/board">Board</a><a class="navlink" href="/lists">Checklists</a></nav>
   </div>
 </header>
 

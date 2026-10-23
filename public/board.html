@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Move Board</title>
+<meta name="theme-color" content="#F1F4F2" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0F1412" media="(prefers-color-scheme: dark)">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap">
+<style>
+/* Wall display: a header with totals, then three kanban columns that fill the screen and scroll on their own */
+:root {
+  --bg: #F1F4F2; --surface: #FFFFFF; --ink: #17201C; --muted: #586560; --line: #D7DED9;
+  --accent: #0D6A56; --accent-soft: #DEEEE8; --on-accent: #FFFFFF;
+  --tape: #A86F00; --tape-soft: #FBEFD3;
+  --f-body: "Instrument Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --f-mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #0F1412; --surface: #161D1A; --ink: #E3E9E5; --muted: #9AA8A1; --line: #29332F;
+    --accent: #4CC1A2; --accent-soft: #15302A; --on-accent: #0F1412;
+    --tape: #EDB441; --tape-soft: #33290F; color-scheme: dark; }
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.4 var(--f-body); -webkit-font-smoothing: antialiased; display: flex; flex-direction: column; padding: max(12px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(12px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); gap: 12px; }
+h1, h2 { margin: 0; }
+
+.top { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.title { display: flex; flex-direction: column; line-height: 1.15; margin-right: auto; }
+.title h1 { font-size: 22px; letter-spacing: -.01em; }
+.title span { font-size: 13px; color: var(--muted); }
+.title a { color: var(--accent); }
+.stat { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.1; }
+.stat b { font-family: var(--f-mono); font-size: 26px; font-variant-numeric: tabular-nums; }
+.stat span { font-size: 11.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.join { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); max-width: 150px; line-height: 1.25; }
+.join .qr { background: #FFFFFF; border-radius: 6px; padding: 4px; line-height: 0; flex: none; }
+.join svg { width: 64px; height: 64px; display: block; }
+
+.bar { display: flex; height: 8px; border-radius: 99px; overflow: hidden; background: var(--line); }
+.bar i { display: block; height: 100%; transition: width .4s ease; }
+.bar .b-packed { background: var(--tape); }
+.bar .b-loaded { background: color-mix(in srgb, var(--accent) 45%, var(--surface)); }
+.bar .b-inroom { background: var(--accent); }
+
+.board { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 760px) { .board { grid-template-columns: 1fr; } }
+.col { display: flex; flex-direction: column; min-height: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+.col-head { display: flex; align-items: baseline; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+.col-head h2 { font-size: 15px; letter-spacing: .06em; text-transform: uppercase; }
+.col-head b { margin-left: auto; font-family: var(--f-mono); font-size: 22px; font-variant-numeric: tabular-nums; }
+.col-head .dot { width: 12px; height: 12px; border-radius: 4px; align-self: center; flex: none; }
+.c-packed .dot { background: var(--tape); }
+.c-loaded .dot { background: color-mix(in srgb, var(--accent) 45%, var(--surface)); }
+.c-inroom .dot { background: var(--accent); }
+.col-body { flex: 1; min-height: 0; overflow-y: auto; padding: 10px; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); align-content: start; gap: 8px; }
+.empty { grid-column: 1 / -1; color: var(--muted); text-align: center; padding: 28px 8px; font-size: 14px; }
+
+.card { border: 1px solid var(--line); border-left: 5px solid var(--sw, var(--line)); border-radius: 10px; padding: 8px 10px; background: var(--bg); display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.card .n { font-family: var(--f-mono); font-weight: 700; font-size: 22px; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.card .what { font-size: 13.5px; font-weight: 600; overflow-wrap: anywhere; }
+.card .what.is-empty { color: var(--muted); font-weight: 500; font-style: italic; }
+.card .room { font-size: 12.5px; color: var(--muted); overflow-wrap: anywhere; }
+.card .ago { font-size: 11.5px; color: var(--muted); }
+.card.is-new { border-color: var(--accent); border-left-color: var(--sw, var(--line)); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent); animation: arrive 1.2s ease-out; }
+@keyframes arrive { from { transform: scale(.94); opacity: .4; } to { transform: none; opacity: 1; } }
+
+.foot { display: flex; justify-content: space-between; gap: 12px; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
+.foot .bad { color: #B3261E; font-weight: 600; }
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="title">
+    <h1>Move board</h1>
+    <span>133 Oratava → 12 Savoy Court · <a href="/">Scanner</a></span>
+  </div>
+  <div class="stat"><b id="sTotal">–</b><span>Boxes</span></div>
+  <div class="stat"><b id="sTodo">–</b><span>Not packed yet</span></div>
+  <div class="stat"><b id="sPct">–</b><span>In room</span></div>
+  <div class="join"><div class="qr" id="qr" aria-hidden="true"></div><span>Helping? Scan to open the scanner</span></div>
+</header>
+
+<div class="bar" id="bar" role="img" aria-label="Overall progress"><i class="b-packed"></i><i class="b-loaded"></i><i class="b-inroom"></i></div>
+
+<main class="board">
+  <section class="col c-packed" aria-labelledby="hPacked"><div class="col-head"><i class="dot"></i><h2 id="hPacked">Packed</h2><b id="nPacked">0</b></div><div class="col-body" id="packed"></div></section>
+  <section class="col c-loaded" aria-labelledby="hLoaded"><div class="col-head"><i class="dot"></i><h2 id="hLoaded">Loaded</h2><b id="nLoaded">0</b></div><div class="col-body" id="loaded"></div></section>
+  <section class="col c-inroom" aria-labelledby="hInroom"><div class="col-head"><i class="dot"></i><h2 id="hInroom">In room</h2><b id="nInroom">0</b></div><div class="col-body" id="inroom"></div></section>
+</main>
+
+<footer class="foot"><span id="updated">Connecting…</span><span id="wake"></span></footer>
+
+<script src="/vendor/qrcode-generator-1.4.4.js"></script>
+<script>
+(function () {
+  "use strict";
+  const STEPS = ["labelled", "packed", "loaded", "inroom"];
+  const COLS = ["packed", "loaded", "inroom"];
+  const EMPTY = { packed: "Nothing packed and waiting", loaded: "Nothing on a truck", inroom: "Nothing in its room yet" };
+  const FRESH_MS = 90 * 1000;
+  const $ = (s) => document.querySelector(s);
+  const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const num = (v) => { const n = Number(v); return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0; };
+  const pad3 = (n) => String(num(n)).padStart(3, "0");
+  const statusOf = (b) => (STEPS.includes(b.status) ? b.status : b.arrived === true ? "inroom" : "labelled");
+  const hexOf = (c) => (c && /^#[0-9a-fA-F]{6}$/.test(c.hex || "") ? c.hex : "");
+  const when = (iso) => { const t = Date.parse(iso || ""); return Number.isFinite(t) ? t : 0; };
+  function ago(t) {
+    if (!t) return "";
+    const s = Math.max(0, Math.round((Date.now() - t) / 1000));
+    if (s < 60) return "just now";
+    const m = Math.round(s / 60);
+    if (m < 60) return `${m} min ago`;
+    return new Date(t).toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit" });
+  }
+
+  // Join QR: helpers scan it to open the scanner on their own phone.
+  try {
+    const q = window.qrcode(0, "M"); q.addData(location.origin + "/"); q.make();
+    $("#qr").innerHTML = q.createSvgTag({ cellSize: 3, margin: 2 });
+  } catch (e) { $(".join").hidden = true; }
+
+  let rooms = {}, boxes = {}, okAt = 0;
+  function render() {
+    const all = Object.entries(boxes).map(([id, b]) => Object.assign({ id }, b)).filter((b) => !b.test);
+    const by = { labelled: [], packed: [], loaded: [], inroom: [] };
+    all.forEach((b) => by[statusOf(b)].push(b));
+    const total = all.length;
+    $("#sTotal").textContent = total;
+    $("#sTodo").textContent = by.labelled.length;
+    $("#sPct").textContent = total ? Math.round((by.inroom.length / total) * 100) + "%" : "–";
+    const bars = $("#bar").children;
+    COLS.forEach((k, i) => { bars[i].style.width = total ? (by[k].length / total) * 100 + "%" : "0"; });
+    const now = Date.now();
+    COLS.forEach((k) => {
+      const rows = by[k].sort((a, b) => when(b.statusAt) - when(a.statusAt) || num(b.n) - num(a.n));
+      $("#n" + k[0].toUpperCase() + k.slice(1)).textContent = rows.length;
+      $("#" + k).innerHTML = rows.length ? rows.map((b) => {
+        const r = rooms[b.dest], t = when(b.statusAt);
+        const room = r ? String(r.name) : "No room yet";
+        return `<div class="card ${t && now - t < FRESH_MS ? "is-new" : ""}" style="--sw:${r ? hexOf(r.colour) || "var(--line)" : "var(--line)"}">
+          <span class="n">${pad3(b.n)}</span>
+          ${b.cat ? `<span class="what">${esc(b.cat)}</span>` : `<span class="what is-empty">Contents not set</span>`}
+          <span class="room">→ ${esc(room)}</span>
+          ${t ? `<span class="ago">${ago(t)}</span>` : ""}
+        </div>`;
+      }).join("") : `<div class="empty">${EMPTY[k]}</div>`;
+    });
+  }
+
+  async function refresh() {
+    try {
+      const r = await fetch("/api/state", { cache: "no-store" });
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      const s = await r.json();
+      rooms = s.rooms || {}; boxes = s.boxes || {}; okAt = Date.now();
+      render();
+    } catch (e) { /* keep the last board on screen; the footer shows it's stale */ }
+    const stale = okAt && Date.now() - okAt > 20000;
+    $("#updated").innerHTML = !okAt ? `<span class="bad">Can't reach the box list yet</span>` : stale ? `<span class="bad">Lost connection · last updated ${ago(okAt)}</span>` : `Live · updated ${new Date(okAt).toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit", second: "2-digit" })}`;
+  }
+  refresh();
+  setInterval(refresh, 3000);
+
+  // Keep the tablet's screen on while the board is showing.
+  let lock = null;
+  async function keepAwake() {
+    if (!("wakeLock" in navigator) || document.hidden) { if (!("wakeLock" in navigator)) $("#wake").textContent = "Set the screen to never sleep to keep this on show"; return; }
+    try { lock = await navigator.wakeLock.request("screen"); $("#wake").textContent = "Screen kept awake"; lock.addEventListener("release", () => { $("#wake").textContent = ""; }); }
+    catch (e) { $("#wake").textContent = "Tap anywhere to keep the screen awake"; }
+  }
+  keepAwake();
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) { keepAwake(); refresh(); } });
+  document.addEventListener("click", () => { if (!lock || lock.released) keepAwake(); });
+})();
+</script>
+</body>
+</html>
