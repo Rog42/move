@@ -84,7 +84,7 @@ npx wrangler d1 execute move --local --file=seed.sql
 `main` is what's live: every merge to it deploys move.rog42.net.
 
 1. Each change goes on its own branch, with a pull request describing what changed and how it was tested.
-2. Cloudflare builds every branch to its own preview link (Worker → Settings → Build → Branch control → builds for non-production branches).
+2. Cloudflare builds every branch to its own preview link with `npx wrangler preview` (Worker → Settings → Builds → Previews Base).
 3. Rog checks the preview, then the pull request is merged and the change goes live.
 
-Previews use the same database as the live site, so try things out with test labels (T001…) only. Checklists stay locked on previews, because they aren't behind Cloudflare Access.
+Previews use their own database, `move-preview`, which has the Savoy rooms and no boxes. Trying things out on a preview never touches the live box list. Its settings live in the `previews` section of `wrangler.toml`, because Worker Previews don't inherit the live settings. If room names or colours change on the live site, copy them across to `move-preview` too. Checklists stay locked on previews, because they aren't behind Cloudflare Access.
