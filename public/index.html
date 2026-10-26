@@ -94,6 +94,10 @@ input[type="text"], input[inputmode], select { width: 100%; min-width: 0; paddin
 .mlist li b { font-family: var(--f-mono); font-weight: 500; min-width: 2.4em; }
 .mlist li span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .mlist li .linkbtn { color: var(--late); }
+.align { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; font-size: 12.5px; color: var(--muted); }
+.align span { flex-basis: 100%; }
+.align label { display: flex; align-items: center; gap: 6px; }
+.align input { width: 4.2em; padding: 5px 6px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); font: 500 14px var(--f-mono); }
 .queue-text { margin: 0; font-size: 14px; }
 .queue-text b { font-family: var(--f-mono); font-weight: 500; }
 .queue-confirm { border: 1px dashed var(--tape); background: var(--tape-soft); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; font-size: 14px; }
@@ -233,6 +237,11 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
             <button type="button" id="cpPlus" aria-label="More labels per box">+</button>
           </div>
         </div>
+        <div class="align" id="sheetAlign" hidden>
+          <span>Sheet alignment, mm down</span>
+          <label>Top row <input type="number" id="adjTop" step="1" min="-20" max="20" inputmode="numeric"></label>
+          <label>Bottom row <input type="number" id="adjBottom" step="1" min="-20" max="20" inputmode="numeric"></label>
+        </div>
         <div class="row">
           <button class="btn" type="button" id="lbPrint" disabled>Print</button>
           <button class="btn" type="button" id="lbShare" disabled>Share</button>
@@ -302,7 +311,12 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
   const STEP_NAME = Object.fromEntries(STEPS);
   const SIZES = { "100x150": [100, 150], "a4": [99, 139], "48x30": [48, 30], "50x30": [50, 30], "40x30": [40, 30], "50x20": [50, 20] };
   // Avery L7169 and lookalikes: 4 labels of 99.1 x 139 mm on A4, 2 across and 2 down.
-  const SHEET = { w: 99.1, h: 139, slots: [[4.65, 9.5], [106.25, 9.5], [4.65, 148.5], [106.25, 148.5]] };
+  const SHEET = { w: 99.1, h: 139, cols: [4.65, 106.25], rows: [9.5, 148.5] };
+  // Per-printer nudges in mm, saved on this device. The bottom row starts 10 mm lower,
+  // measured on the Brother laser with L7169 sheets.
+  let sheetAdj = { top: 0, bottom: 10 };
+  try { const a = JSON.parse(localStorage.getItem("sheetAdj") || "null"); if (a && Number.isFinite(a.top) && Number.isFinite(a.bottom)) sheetAdj = a; } catch (e) {}
+  const slotPos = (k) => [SHEET.cols[k % 2], SHEET.rows[k < 2 ? 0 : 1] + (k < 2 ? sheetAdj.top : sheetAdj.bottom)];
   const DEFAULT_CATS = ["Kitchenware", "Pantry", "Crockery", "Glassware", "Books", "Linen", "Clothes", "Shoes", "Toiletries", "Office", "Electronics", "Cables", "Music", "Sheet music", "Craft", "Fabric", "Tools", "Garden", "Decor", "Photos", "Documents", "Toys"];
 
   const $ = (s) => document.querySelector(s);
@@ -492,6 +506,9 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     const sheet = size === "a4";
     $("#lbPrint").textContent = sheet ? "Print on its own sheet" : copies === 1 ? "Print" : `Print ${copies}`;
     $("#lbShare").hidden = sheet; $("#lbSave").hidden = sheet;
+    $("#sheetAlign").hidden = !sheet;
+    if (document.activeElement !== $("#adjTop")) $("#adjTop").value = sheetAdj.top;
+    if (document.activeElement !== $("#adjBottom")) $("#adjBottom").value = sheetAdj.bottom;
     $("#lbHint").textContent = cur
       ? `Box ${tag(cur)} is ready${cur.printedAt ? "" : " and waiting in To print"}.${copies > 1 ? ` Stick one on each of ${copies} sides; every copy scans as the same box.` : ""} Change the fields to start the next one.`
       : "Numbers come from one shared counter, so two people can never get the same one.";
@@ -512,9 +529,9 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     let html = "";
     if (size === "a4") {
       for (let i = 0; i < urls.length; i += 4) {
-        html += `<div class="sheet">${urls.slice(i, i + 4).map((u, k) => `<img src="${u}" alt="" style="left:${SHEET.slots[k][0]}mm;top:${SHEET.slots[k][1]}mm">`).join("")}</div>`;
+        html += `<div class="sheet">${urls.slice(i, i + 4).map((u, k) => `<img src="${u}" alt="" style="left:${slotPos(k)[0]}mm;top:${slotPos(k)[1]}mm">`).join("")}</div>`;
       }
-      st.textContent = `@media print { @page { size: A4 portrait; margin: 0; } #printArea .sheet { position: relative; width: 210mm; height: 296mm; overflow: hidden; break-after: page; page-break-after: always; } #printArea .sheet:last-child { break-after: auto; page-break-after: auto; } #printArea .sheet img { position: absolute; width: ${SHEET.w}mm; height: ${SHEET.h}mm; } }`;
+      st.textContent = `@media print { @page { size: A4 portrait; margin: 0; } #printArea .sheet { position: relative; width: 210mm; height: 296.5mm; overflow: hidden; break-after: page; page-break-after: always; } #printArea .sheet:last-child { break-after: auto; page-break-after: auto; } #printArea .sheet img { position: absolute; width: ${SHEET.w}mm; height: ${SHEET.h}mm; } }`;
     } else {
       const [w, h] = SIZES[size];
       html = urls.map((u) => `<img src="${u}" alt="">`).join("");
@@ -618,6 +635,13 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     try { localStorage.setItem("labelCopies", String(copies)); } catch (e) {}
     drawPreview(); renderQueue();
   }
+  function setAdj() {
+    const clamp = (v, d) => { const n = Number(v); return Number.isFinite(n) ? Math.max(-20, Math.min(20, Math.round(n * 2) / 2)) : d; };
+    sheetAdj = { top: clamp($("#adjTop").value, sheetAdj.top), bottom: clamp($("#adjBottom").value, sheetAdj.bottom) };
+    try { localStorage.setItem("sheetAdj", JSON.stringify(sheetAdj)); } catch (e) {}
+  }
+  $("#adjTop").addEventListener("change", setAdj);
+  $("#adjBottom").addEventListener("change", setAdj);
   $("#cpMinus").addEventListener("click", () => setCopies(copies - 1));
   $("#cpPlus").addEventListener("click", () => setCopies(copies + 1));
 
