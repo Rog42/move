@@ -99,6 +99,13 @@ input[type="text"], input[inputmode], select { width: 100%; min-width: 0; paddin
 .align label { display: flex; align-items: center; gap: 6px; }
 .align input { width: 4.2em; padding: 5px 6px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); font: 500 14px var(--f-mono); }
 .queue-text { margin: 0; font-size: 14px; }
+.qlist { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.qlist label { display: flex; align-items: center; gap: 6px; padding: 5px 9px 5px 7px; border: 1px solid var(--line); border-left: 4px solid var(--sw, var(--line)); border-radius: 8px; background: var(--bg); font-size: 13px; cursor: pointer; }
+.qlist input { accent-color: var(--accent); width: 16px; height: 16px; margin: 0; }
+.qlist b { font-family: var(--f-mono); font-weight: 500; }
+.qlist span { color: var(--muted); max-width: 11em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qlist label.is-off { opacity: .55; }
+.qsel { display: flex; gap: 16px; }
 .sheet-ask { margin: 0; padding: 10px 12px; border-radius: 10px; background: var(--accent-soft); font-weight: 600; font-size: 14.5px; }
 .log .linkbtn + .linkbtn { margin-left: 10px; }
 .queue-text b { font-family: var(--f-mono); font-weight: 500; }
@@ -256,9 +263,12 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
   <section class="card" id="queueCard" aria-labelledby="queueH" hidden>
     <h2 id="queueH">To print</h2>
     <p class="queue-text" id="queueText"></p>
+    <ul class="qlist" id="qList" aria-label="Labels waiting to print"></ul>
+    <div class="qsel"><button class="linkbtn" type="button" id="qAll">Tick all</button><button class="linkbtn" type="button" id="qNone">Untick all</button></div>
     <div class="row">
-      <button class="btn btn-primary" type="button" id="queuePrint">Print all</button>
-      <button class="btn" type="button" id="queueSkip">Mark all as printed</button>
+      <button class="btn btn-primary" type="button" id="queuePrint">Print ticked</button>
+      <button class="btn" type="button" id="queueFull" hidden>Full sheets only</button>
+      <button class="btn" type="button" id="queueSkip">Mark ticked as printed</button>
     </div>
     <div class="queue-confirm" id="queueConfirm" hidden>
       <span id="queueConfirmText">Did they print OK?</span>
@@ -569,34 +579,48 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     flush();
     return out;
   }
+  // Labels can be held back: untick them, or let "Full sheets only" leave the odd ones for the next sheet.
+  const qOff = new Set();
+  const gcd = (a, b) => (b ? gcd(b, a % b) : a);
+  function queueSel() { const q = queue(); return { q, sel: q.filter((b) => !qOff.has(b.id)) }; }
+  function fullSheetCount(n) { const unit = 4 / gcd(copies, 4); return Math.floor(n / unit) * unit; }
   function renderQueue() {
-    const q = queue(), card = $("#queueCard");
+    const { q, sel } = queueSel(), card = $("#queueCard");
+    [...qOff].forEach((id) => { if (!q.some((b) => b.id === id)) qOff.delete(id); });
     card.hidden = !q.length && !lastBatch.length;
     if (card.hidden) return;
-    const labels = q.length * copies, sizeName = $("#lbSize").selectedOptions[0] ? $("#lbSize").selectedOptions[0].textContent : size;
-    const sheets = size === "a4" ? Math.ceil(labels / 4) : 0;
-    $("#queueText").innerHTML = q.length
-      ? `${plural(q.length, "label", "labels")} waiting: ${ranges(q).map((r) => `<b>${r}</b>`).join(", ")}. At ${esc(sizeName)} and ${plural(copies, "side", "sides")} that's ${plural(labels, "label", "labels")}${sheets ? ` on ${plural(sheets, "sheet", "sheets")}` : ""}.`
-      : "Nothing waiting to print.";
-    $("#queuePrint").textContent = q.length ? `Print all ${labels}` : "Print all";
-    $("#queuePrint").disabled = !q.length; $("#queueSkip").disabled = !q.length;
+    const sheet = size === "a4", labels = sel.length * copies, sizeName = $("#lbSize").selectedOptions[0] ? $("#lbSize").selectedOptions[0].textContent : size;
+    const sheets = sheet ? Math.ceil(labels / 4) : 0, spare = sheets * 4 - labels;
+    $("#queueText").innerHTML = !q.length ? "Nothing waiting to print."
+      : !sel.length ? `${plural(q.length, "box", "boxes")} waiting, none ticked.`
+      : `${plural(q.length, "box", "boxes")} waiting${sel.length < q.length ? `, ${sel.length} ticked` : ""}. At ${esc(sizeName)} and ${plural(copies, "side", "sides")} that's ${plural(labels, "label", "labels")}${sheets ? ` on ${plural(sheets, "sheet", "sheets")}${spare ? `, with ${plural(spare, "spot", "spots")} left empty on the last one` : ""}` : ""}.`;
+    $("#qList").innerHTML = q.map((b) => {
+      const r = rooms[b.dest], off = qOff.has(b.id);
+      return `<li><label class="${off ? "is-off" : ""}" style="--sw:${r ? hexOf(r.colour) || "var(--line)" : "var(--line)"}"><input type="checkbox" data-q="${esc(b.id)}" ${off ? "" : "checked"}><b>${tag(b)}</b><span>${esc(b.cat || (r ? r.name : ""))}</span></label></li>`;
+    }).join("");
+    $(".qsel").hidden = q.length < 2;
+    $("#queuePrint").textContent = sel.length ? `Print ${sel.length === q.length ? "all" : "ticked"} (${plural(labels, "label", "labels")})` : "Print ticked";
+    $("#queuePrint").disabled = !sel.length; $("#queueSkip").disabled = !sel.length;
+    const full = sheet ? fullSheetCount(sel.length) : 0;
+    $("#queueFull").hidden = !(full > 0 && full < sel.length);
+    if (!$("#queueFull").hidden) $("#queueFull").textContent = `Full sheets only (${plural(full, "box", "boxes")}, ${plural((full * copies) / 4, "sheet", "sheets")})`;
+    if (!skipArmed) $("#queueSkip").textContent = sel.length === q.length ? "Mark all as printed" : "Mark ticked as printed";
     $("#queueConfirm").hidden = !lastBatch.length;
-    if (lastBatch.length) $("#queueConfirmText").textContent = `Did all ${plural(lastBatch.length, "box", "boxes")} print OK? If some didn't, keep them on the list and reprint.`;
+    if (lastBatch.length) $("#queueConfirmText").textContent = `Did ${lastBatch.length === 1 ? "it" : lastBatch.length === 2 ? "both boxes" : `all ${lastBatch.length} boxes`} print OK? If not, keep them on the list and reprint.`;
   }
-  $("#queuePrint").addEventListener("click", () => {
-    const ids = queue().map((b) => b.id);
-    if (!ids.length) return;
-    lastBatch = ids;
-    printIds(ids);
-    renderQueue();
-  });
-  $("#queueOk").addEventListener("click", async () => { const ids = lastBatch; lastBatch = []; await markPrinted(ids, true); toast(`${plural(ids.length, "box", "boxes")} taken off the print list.`); });
+  $("#qList").addEventListener("change", (e) => { const c = e.target.closest("[data-q]"); if (!c) return; if (c.checked) qOff.delete(c.dataset.q); else qOff.add(c.dataset.q); renderQueue(); });
+  $("#qAll").addEventListener("click", () => { qOff.clear(); renderQueue(); });
+  $("#qNone").addEventListener("click", () => { queue().forEach((b) => qOff.add(b.id)); renderQueue(); });
+  function printBatch(ids) { if (!ids.length) return; lastBatch = ids; printIds(ids); renderQueue(); }
+  $("#queuePrint").addEventListener("click", () => printBatch(queueSel().sel.map((b) => b.id)));
+  $("#queueFull").addEventListener("click", () => { const { sel } = queueSel(); printBatch(sel.slice(0, fullSheetCount(sel.length)).map((b) => b.id)); });
+  $("#queueOk").addEventListener("click", async () => { const ids = lastBatch; lastBatch = []; qOff.clear(); await markPrinted(ids, true); toast(`${plural(ids.length, "box", "boxes")} taken off the print list.`); });
   $("#queueNo").addEventListener("click", () => { lastBatch = []; renderQueue(); });
   let skipArmed = false, skipT;
   $("#queueSkip").addEventListener("click", async () => {
-    if (!skipArmed) { skipArmed = true; $("#queueSkip").textContent = "Tap again to confirm"; clearTimeout(skipT); skipT = setTimeout(() => { skipArmed = false; $("#queueSkip").textContent = "Mark all as printed"; }, 3000); return; }
-    skipArmed = false; $("#queueSkip").textContent = "Mark all as printed";
-    const ids = queue().map((b) => b.id); lastBatch = [];
+    if (!skipArmed) { skipArmed = true; $("#queueSkip").textContent = "Tap again to confirm"; clearTimeout(skipT); skipT = setTimeout(() => { skipArmed = false; renderQueue(); }, 3000); return; }
+    skipArmed = false; clearTimeout(skipT);
+    const ids = queueSel().sel.map((b) => b.id); lastBatch = [];
     await markPrinted(ids, true);
   });
 
