@@ -48,8 +48,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .note { font-size: 12.5px; color: var(--muted); padding: 6px 6px 2px; }
 
 /* The plan itself */
-.area rect.fill { stroke: var(--wall); stroke-width: 12; }
-.area.is-open rect.fill { stroke-dasharray: 34 22; stroke-width: 8; }
+.area .fill { stroke: var(--wall); stroke-width: 12; stroke-linejoin: miter; }
+.area.is-open .fill { stroke-dasharray: 34 22; stroke-width: 8; }
 .area .big { font-family: var(--f-body); font-weight: 700; letter-spacing: -.005em; }
 .area .small { font-family: var(--f-body); font-weight: 500; }
 .area[data-room] { cursor: pointer; }
@@ -57,7 +57,10 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .plan.is-hl .area[data-room]:not(.is-on) { opacity: .18; }
 .plan.is-hl .area:not([data-room]) { opacity: .5; }
 .outline { fill: none; stroke: var(--wall); stroke-width: 20; stroke-linejoin: miter; }
-.steps line { stroke: var(--wall); stroke-width: 6; }
+.steps rect { fill: #FFFFFF; stroke: var(--wall); stroke-width: 7; }
+.steps line { stroke: var(--wall); stroke-width: 5; }
+.steps.is-inside rect { fill: none; stroke-width: 4; }
+.steps.is-inside line { stroke-width: 4; opacity: .55; }
 .compass text { font: 700 60px var(--f-body); fill: var(--ink); }
 .compass circle { fill: none; stroke: var(--muted); stroke-width: 6; }
 .compass path { fill: var(--ink); }
@@ -151,38 +154,54 @@ button { font: inherit; color: inherit; cursor: pointer; }
     "s-laundry": { name: "Laundry", order: 12, colour: { hex: "#8B5A2B", name: "Brown" } },
   };
 
-  // The plan, in metres from the top-left corner (x across, y down), oriented like the agent's plan.
+  // The plan, in metres, traced off the agent's plan and the same way up as theirs:
+  // x across, y down from the back edge of the pergola and carport.
+  // Each area is a rectangle (x, y, w, h) or a polygon (pts, with box saying where its label goes).
   // room: which app room the area belongs to (null for halls). part: striped, belongs to that room.
-  // open: covered outdoor space, drawn with a dashed edge.
+  // open: covered outdoor space, drawn with a dashed edge. short: labelled with the plan's own
+  // name (WC) because the room's name won't fit.
   const MAIN = [
-    { id: "pergola", room: "s-outdoor", name: "Pergola", x: 8.2, y: 0, w: 4.5, h: 3.0, part: true, open: true },
-    { id: "kids",    room: "s-guest",   name: "Bed", dims: "3.3 × 3.0", x: 0, y: 3.0, w: 3.3, h: 3.0 },
-    { id: "bath",    room: "s-bath",    name: "Bath", x: 3.3, y: 3.0, w: 2.9, h: 3.0 },
-    { id: "wc",      room: "s-bath",    name: "WC", x: 6.2, y: 3.0, w: 1.4, h: 1.3 },
-    { id: "ldry",    room: "s-laundry", name: "Ldry", x: 6.2, y: 4.3, w: 1.4, h: 1.7 },
-    { id: "store1",  room: "s-storage", name: "Store", x: 7.6, y: 3.0, w: 0.6, h: 3.0 },
-    { id: "linen",   room: null,        name: "Linen", x: 0, y: 6.0, w: 0.7, h: 1.2 },
-    { id: "hall",    room: null,        name: "Hall", x: 0.7, y: 6.0, w: 7.5, h: 1.2 },
-    { id: "craft",   room: "s-craft",   name: "Bed", dims: "3.6 × 3.0", x: 0, y: 7.2, w: 3.6, h: 3.0 },
-    { id: "craftbr", room: "s-craft",   name: "Robe", x: 0, y: 10.2, w: 3.6, h: 0.6, part: true },
-    { id: "master",  room: "s-master",  name: "Bed", dims: "4.6 × 3.6", x: 3.6, y: 7.2, w: 4.6, h: 3.6 },
-    { id: "bir",     room: "s-master",  name: "Robe", x: 3.6, y: 10.8, w: 4.6, h: 1.2, part: true },
-    { id: "ens",     room: "s-ensuite", name: "Ens", x: 5.6, y: 12.0, w: 2.6, h: 3.0 },
-    { id: "family",  room: "s-living",  name: "Family", dims: "4.5 × 6.8", x: 8.2, y: 3.0, w: 4.5, h: 6.8 },
-    { id: "kitchen", room: "s-kitchen", name: "Kitchen", x: 8.2, y: 9.8, w: 4.5, h: 2.8 },
-    { id: "dining",  room: "s-living",  name: "Dining", x: 8.2, y: 12.6, w: 4.5, h: 3.0 },
-    { id: "living",  room: "s-music",   name: "Living", dims: "4.6 × 4.8", x: 8.2, y: 15.6, w: 4.5, h: 4.8 },
-    { id: "carport", room: "s-outdoor", name: "Carport / Cabana", dims: "9.0 × 5.5", x: 12.7, y: 3.0, w: 9.0, h: 5.5, part: true, open: true },
-    { id: "store2",  room: "s-storage", name: "Store", x: 21.7, y: 3.0, w: 1.6, h: 2.4 },
+    { id: "pergola", room: "s-outdoor", name: "Pergola", x: 8.5, y: 0, w: 4.65, h: 2.8, part: true, open: true },
+    { id: "carport", room: "s-outdoor", name: "Carport / Cabana", dims: "9 × 5.5",
+      pts: [[13.15, 0], [16.85, 0], [16.35, 1.8], [18.9, 2.6], [18.9, 9.7], [13.15, 9.7]], box: [13.15, 3.0, 5.75, 6.7], part: true, open: true },
+    { id: "store2",  room: "s-storage", name: "Store", x: 18.9, y: 3.2, w: 1.85, h: 2.85 },
+    { id: "store1",  room: "s-storage", name: "Store", x: 7.6, y: 2.8, w: 0.9, h: 3.85 },
+    { id: "family",  room: "s-living",  name: "Family", dims: "4.5 × 6.8",
+      pts: [[8.5, 2.8], [13.15, 2.8], [13.15, 9.6], [11.5, 9.6], [11.5, 11.4], [8.5, 11.4]], box: [8.5, 2.8, 4.65, 6.8] },
+    { id: "kids",    room: "s-guest",   name: "Bed", dims: "3.3 × 3", x: 0, y: 8.2, w: 3.5, h: 3.2 },
+    { id: "bath",    room: "s-bath",    name: "Bath", x: 3.5, y: 8.2, w: 2.45, h: 3.2 },
+    { id: "wc",      room: "s-bath",    name: "WC", x: 5.95, y: 8.2, w: 0.9, h: 1.65, short: true },
+    { id: "ldry",    room: "s-laundry", name: "LDry", x: 6.85, y: 8.2, w: 1.65, h: 3.2 },
+    { id: "linen",   room: null,        name: "Linen", x: 0, y: 11.4, w: 2.2, h: 0.85 },
+    { id: "hall",    room: null,        name: "Hall",
+      pts: [[2.2, 11.4], [5.95, 11.4], [5.95, 9.85], [6.85, 9.85], [6.85, 11.4], [8.6, 11.4], [8.6, 12.25], [2.2, 12.25]], box: [2.2, 11.4, 3.75, 0.85] },
+    { id: "craft",   room: "s-craft",   name: "Bed", dims: "3.6 × 3", x: 0, y: 12.25, w: 3.4, h: 3.75 },
+    { id: "master",  room: "s-master",  name: "Bed", dims: "4.6 × 3.6", x: 3.4, y: 12.25, w: 4.7, h: 3.75 },
+    { id: "bir",     room: "s-master",  name: "Robe", x: 8.1, y: 12.25, w: 0.5, h: 3.75, part: true },
+    { id: "kitchen", room: "s-kitchen", name: "Kitchen", x: 8.6, y: 11.4, w: 2.9, h: 3.45 },
+    { id: "ens",     room: "s-ensuite", name: "Ens", x: 6.3, y: 16.0, w: 2.3, h: 1.7 },
+    { id: "dining",  room: "s-living",  name: "Dining", x: 8.6, y: 14.85, w: 2.9, h: 2.85 },
+    { id: "living",  room: "s-music",   name: "Living", dims: "4.6 × 4.8", x: 6.3, y: 17.7, w: 5.2, h: 5.05 },
   ];
-  // The studio stands on its own, turned at an angle, above the carport.
-  const STUDIO = { x: 15.6, y: -3.2, angle: -12, areas: [
-    { id: "studio",  room: "s-office", name: "Studio / Bed", dims: "5.0 × 4.0", x: 0, y: 0, w: 5.0, h: 4.0 },
-    { id: "sens",    room: "s-office", name: "Ens", x: 5.0, y: 0, w: 2.0, h: 2.4, part: true },
-    { id: "sbir",    room: "s-office", name: "Robe", x: 5.0, y: 2.4, w: 2.0, h: 1.6, part: true },
-  ], steps: { x: 1.6, y: 4.0, w: 1.4, h: 1.0 } };
-  // The main house's outer walls, traced around its rooms (not the pergola or carport).
-  const OUTLINE = [[0, 3.0], [12.7, 3.0], [12.7, 20.4], [8.2, 20.4], [8.2, 15.0], [5.6, 15.0], [5.6, 12.0], [3.6, 12.0], [3.6, 10.8], [0, 10.8]];
+  // The studio stands on its own above the carport, turned clockwise, as on the agent's plan.
+  // Its areas are measured from its own top-left corner.
+  const STUDIO = { x: 18.25, y: -4.6, angle: 17.8, w: 7.3, h: 6.65, areas: [
+    { id: "studio",  room: "s-office", name: "Studio / Bed", dims: "5 × 4",
+      pts: [[0, 0], [5.4, 0], [5.4, 4.4], [5.9, 4.4], [5.9, 6.65], [0, 6.65]], box: [0, 0, 5.4, 6.65] },
+    { id: "sens",    room: "s-office", name: "Ens", x: 5.4, y: 0, w: 1.9, h: 4.4, part: true },
+    { id: "sbir",    room: "s-office", name: "Robe", x: 5.9, y: 4.4, w: 1.4, h: 2.25, part: true },
+  ] };
+  // Steps: up to the studio from the carport, out the back of the pergola, and down from the hall to the family room.
+  const STEPS = [
+    { x: 15.7, y: 0.05, w: 1.0, h: 1.75, n: 5 },
+    { x: 12.2, y: 0.05, w: 0.95, h: 0.9, n: 3 },
+    { x: 8.85, y: 9.5, w: 0.75, h: 0.9, n: 3, inside: true },
+  ];
+  // Outer walls: the main house, and the store beside the carport.
+  const OUTLINES = [
+    [[7.6, 2.8], [13.15, 2.8], [13.15, 9.6], [11.5, 9.6], [11.5, 22.75], [6.3, 22.75], [6.3, 16.0], [0, 16.0], [0, 8.2], [8.5, 8.2], [8.5, 6.65], [7.6, 6.65]],
+    [[18.9, 3.2], [20.75, 3.2], [20.75, 6.05], [18.9, 6.05]],
+  ];
 
   let rooms = Object.assign({}, FALLBACK), counts = {}, hl = null;
 
@@ -199,23 +218,27 @@ button { font: inherit; color: inherit; cursor: pointer; }
 
   // Fit a label inside its area: shrink to fit across, or turn it on its side in a tall, narrow area.
   function fit(text, w, h, max) {
-    const ems = text.length * 0.56 + 0.4; // rough width of the text, in font sizes
+    const ems = text.length * 0.6 + 0.5; // rough width of the text, in font sizes, with a margin
     const across = Math.min(max, (w * M * 0.88) / ems, h * M * 0.5);
     const down = Math.min(max, (h * M * 0.88) / ems, w * M * 0.5);
     return across >= 24 || across >= down ? { size: across, turn: false } : { size: down, turn: true };
   }
 
+  const pts = (list) => list.map((p) => p.map((v) => +(v * M).toFixed(1)).join(",")).join(" ");
+
   function areaSvg(a) {
     const r = a.room ? rooms[a.room] : null;
     const hex = r ? hexOf(r) : null;
-    const X = a.x * M, Y = a.y * M, W = a.w * M, H = a.h * M;
+    const [lx, ly, lw, lh] = a.box || [a.x, a.y, a.w, a.h];
+    const X = lx * M, Y = ly * M, W = lw * M, H = lh * M;
     let fill = "var(--floor)", text = "var(--ink)", subText = "var(--muted)";
     if (hex && a.part) { fill = `url(#hatch-${a.room})`; }
     else if (hex) { fill = hex; text = inkOn(hex); subText = text; }
-    const big = r && !a.part ? r.name : a.name;
+    const own = !r || a.part || a.short; // labelled with the plan's name, not the room's
+    const big = own ? a.name : r.name;
     const same = r && a.name.toLowerCase() === r.name.toLowerCase();
-    const small = r && !a.part ? [same ? "" : a.name, a.dims].filter(Boolean).join(" · ") : a.dims || "";
-    const f = fit(big, a.w, a.h, 46);
+    const small = own ? a.dims || "" : [same ? "" : a.name, a.dims].filter(Boolean).join(" · ");
+    const f = fit(big, lw, lh, 46);
     const fs = Math.max(14, Math.min(f.size, 46));
     const sf = Math.max(12, Math.min(fs * 0.68, 30));
     const cx = X + W / 2, cy = Y + H / 2;
@@ -230,35 +253,41 @@ button { font: inherit; color: inherit; cursor: pointer; }
         ${smallFits ? `<text class="small" text-anchor="middle" y="${dy + fs * 0.62 + sf * 0.62}" font-size="${sf.toFixed(1)}" fill="${subText}" dominant-baseline="middle">${esc(small)}</text>` : ""}</g>`;
     const title = r ? `${r.name}: ${[a.name, a.dims].filter(Boolean).join(" ")}` : [a.name, a.dims].filter(Boolean).join(" ");
     return `<g class="area${a.open ? " is-open" : ""}" ${a.room ? `data-room="${a.room}" tabindex="0" role="button" aria-label="${esc(title)}"` : ""}><title>${esc(title)}</title>
-      <rect class="fill" x="${X}" y="${Y}" width="${W}" height="${H}" fill="${fill}"/>${label}</g>`;
+      ${a.pts ? `<polygon class="fill" points="${pts(a.pts)}" fill="${fill}"/>` : `<rect class="fill" x="${a.x * M}" y="${a.y * M}" width="${a.w * M}" height="${a.h * M}" fill="${fill}"/>`}${label}</g>`;
   }
 
   function draw() {
-    const pad = 1.2;
-    const minX = -pad, minY = STUDIO.y - 1.6 - pad, maxX = 23.3 + pad, maxY = 20.4 + pad;
+    // Fit the view around the house and the turned studio.
+    const t = (STUDIO.angle * Math.PI) / 180, c = Math.cos(t), sn = Math.sin(t);
+    const corners = [[0, 0], [STUDIO.w, 0], [STUDIO.w, STUDIO.h], [0, STUDIO.h]].map(([u, v]) => [STUDIO.x + u * c - v * sn, STUDIO.y + u * sn + v * c]);
+    const pad = 0.9;
+    const minX = -pad, minY = Math.min(0, ...corners.map((p) => p[1])) - pad;
+    const maxX = Math.max(20.75, ...corners.map((p) => p[0])) + pad, maxY = 22.75 + pad;
     const svg = $("#plan");
     svg.setAttribute("viewBox", `${minX * M} ${minY * M} ${(maxX - minX) * M} ${(maxY - minY) * M}`);
     // One stripe pattern per room colour, for robes and covered outdoor areas.
     const hatches = roomList().map((r) => `<pattern id="hatch-${r.id}" patternUnits="userSpaceOnUse" width="34" height="34" patternTransform="rotate(45)">
         <rect width="34" height="34" fill="#FFFFFF"/><rect width="15" height="34" fill="${hexOf(r)}"/></pattern>`).join("");
-    const st = STUDIO.steps, treads = [1, 2, 3].map((i) => `<line x1="${st.x * M}" x2="${(st.x + st.w) * M}" y1="${(st.y + (st.h * i) / 4) * M}" y2="${(st.y + (st.h * i) / 4) * M}"/>`).join("");
-    const outline = OUTLINE.map((p) => p.map((v) => v * M).join(",")).join(" ");
-    // North points to the bottom right, as on the agent's plan.
-    const cx = 2.0 * M, cy = 17.6 * M;
+    const steps = STEPS.map((st) => {
+      const lines = Array.from({ length: st.n - 1 }, (_, i) => { const y = (st.y + (st.h * (i + 1)) / st.n) * M; return `<line x1="${st.x * M}" x2="${(st.x + st.w) * M}" y1="${y}" y2="${y}"/>`; }).join("");
+      return `<g class="steps${st.inside ? " is-inside" : ""}"><rect x="${st.x * M}" y="${st.y * M}" width="${st.w * M}" height="${st.h * M}"/>${lines}</g>`;
+    }).join("");
+    // North points down and a little to the right, as on the agent's plan.
+    const north = 160, cx = (maxX - pad - 1.6) * M, cy = 20.6 * M;
     svg.innerHTML = `<title id="planTitle">Floor plan of 12 Savoy Court with each room in its marker colour</title>
       <defs>${hatches}</defs>
       ${MAIN.map(areaSvg).join("")}
-      <polygon class="outline" points="${outline}"/>
+      ${steps}
+      ${OUTLINES.map((o) => `<polygon class="outline" points="${pts(o)}"/>`).join("")}
       <g transform="translate(${STUDIO.x * M} ${STUDIO.y * M}) rotate(${STUDIO.angle})">
         ${STUDIO.areas.map(areaSvg).join("")}
-        <polygon class="outline" points="0,0 ${7 * M},0 ${7 * M},${4 * M} 0,${4 * M}"/>
-        <g class="steps"><rect x="${st.x * M}" y="${st.y * M}" width="${st.w * M}" height="${st.h * M}" fill="var(--floor)" stroke="var(--wall)" stroke-width="8"/>${treads}</g>
+        <polygon class="outline" points="${pts([[0, 0], [STUDIO.w, 0], [STUDIO.w, STUDIO.h], [0, STUDIO.h]])}"/>
       </g>
       <g class="compass" transform="translate(${cx} ${cy})">
-        <circle r="78"/><g transform="rotate(135)"><path d="M0,-70 L24,18 L0,4 L-24,18 Z"/></g>
-        <text x="${Math.sin(Math.PI * 135 / 180) * 128}" y="${-Math.cos(Math.PI * 135 / 180) * 128}" text-anchor="middle" dominant-baseline="middle">N</text>
+        <circle r="78"/><g transform="rotate(${north})"><path d="M0,-70 L24,18 L0,4 L-24,18 Z"/></g>
+        <text x="${Math.sin((Math.PI * north) / 180) * 128}" y="${-Math.cos((Math.PI * north) / 180) * 128}" text-anchor="middle" dominant-baseline="middle">N</text>
       </g>
-      <g class="scale" transform="translate(${0.4 * M} ${20.0 * M})">
+      <g class="scale" transform="translate(${0.2 * M} ${22.2 * M})">
         <path d="M0,-14 V0 H${3 * M} V-14 M${M},0 V-8 M${2 * M},0 V-8"/>
         <text x="0" y="44">0</text><text x="${3 * M}" y="44" text-anchor="middle">3 m</text>
       </g>`;
