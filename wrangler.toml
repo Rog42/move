@@ -20,3 +20,15 @@ database_id = "dfe4fa59-944a-435f-9dbc-47a78cbc1702"
 ACCESS_TEAM_DOMAIN = "rog42"        # Zero Trust team name (rog42.cloudflareaccess.com)
 # ACCESS_AUD = ""                   # optional: the Access application's AUD tag
 # LISTS_OPEN = "1"                  # opens the checklists to anyone with the link
+
+# Worker Previews (one per branch / pull request). They don't inherit the settings
+# above, so they get their own test database and the same Access team name.
+# move-preview holds the Savoy rooms and no boxes, so trying things out never
+# touches the live box list. The checklists stay locked on previews.
+[previews.vars]
+ACCESS_TEAM_DOMAIN = "rog42"
+
+[[previews.d1_databases]]
+binding = "DB"
+database_name = "move-preview"
+database_id = "f3a80fe7-330d-42f9-85d1-f5240595e6d4"
