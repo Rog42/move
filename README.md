@@ -78,3 +78,13 @@ npx wrangler d1 execute move --local --file=seed.sql
 ## Licences
 
 `public/vendor/qrcode-generator-1.4.4.js` is MIT, © Kazuhiko Arase. `public/vendor/jsQR-1.4.0.js` is Apache-2.0, © Cosmo Wolfe.
+
+## Making changes
+
+`main` is what's live: every merge to it deploys move.rog42.net.
+
+1. Each change goes on its own branch, with a pull request describing what changed and how it was tested.
+2. Cloudflare builds every branch to its own preview link (Worker → Settings → Build → Branch control → builds for non-production branches).
+3. Rog checks the preview, then the pull request is merged and the change goes live.
+
+Previews use the same database as the live site, so try things out with test labels (T001…) only. Checklists stay locked on previews, because they aren't behind Cloudflare Access.
