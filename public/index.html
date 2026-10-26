@@ -99,6 +99,8 @@ input[type="text"], input[inputmode], select { width: 100%; min-width: 0; paddin
 .align label { display: flex; align-items: center; gap: 6px; }
 .align input { width: 4.2em; padding: 5px 6px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); font: 500 14px var(--f-mono); }
 .queue-text { margin: 0; font-size: 14px; }
+.sheet-ask { margin: 0; padding: 10px 12px; border-radius: 10px; background: var(--accent-soft); font-weight: 600; font-size: 14.5px; }
+.log .linkbtn + .linkbtn { margin-left: 10px; }
 .queue-text b { font-family: var(--f-mono); font-weight: 500; }
 .queue-confirm { border: 1px dashed var(--tape); background: var(--tape-soft); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; font-size: 14px; }
 .bc.is-empty { color: var(--muted); font-style: italic; }
@@ -280,6 +282,7 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
   <div class="cam-top" id="camTop">Point at a box label</div>
   <div class="cam-bar">
     <div class="cam-msg" id="camMsg" aria-live="assertive">Hold the QR code inside the square</div>
+    <button class="btn" type="button" id="camAdd" hidden>Add contents</button>
     <button class="btn" type="button" id="camClose">Done scanning</button>
   </div>
 </div>
@@ -288,6 +291,7 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
   <div class="sheet-in">
     <div class="sheet-head"><b id="sheetNum">000</b><button class="linkbtn" type="button" id="sheetClose">Close</button></div>
     <div class="seg" id="sheetSeg" role="group" aria-label="Stage"></div>
+    <p class="sheet-ask" id="sheetAsk" hidden></p>
     <label class="fld">What's in it (optional) <input type="text" id="shCat" maxlength="40" list="catList" autocomplete="off"></label>
     <label class="fld">Goes to <select id="shDest"></select></label>
     <div class="row">
@@ -390,10 +394,14 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
   }
 
   function renderLog() {
-    $("#log").innerHTML = log.slice(0, 5).map((e, i) => `<li><b>${esc(e.t)}</b> ${esc(e.cat || "")} → ${esc(e.note)}${i === 0 && e.undo ? ` <button class="linkbtn" type="button" data-undo="1">Undo</button>` : ""}</li>`).join("");
+    $("#log").innerHTML = log.slice(0, 5).map((e, i) => {
+      const b = boxes[e.id], need = b && !b.cat;
+      return `<li><b>${esc(e.t)}</b> ${esc((b && b.cat) || "")} → ${esc(e.note)}${need ? ` <button class="linkbtn" type="button" data-addc="${esc(e.id)}">Add contents</button>` : ""}${i === 0 && e.undo ? ` <button class="linkbtn" type="button" data-undo="1">Undo</button>` : ""}</li>`;
+    }).join("");
   }
   function renderFilters() {
-    const opts = [["all", "All"]].concat(STEPS);
+    const missing = list().filter((b) => !b.cat).length;
+    const opts = [["all", "All"]].concat(STEPS, missing || filter === "nocat" ? [["nocat", `Contents to add (${missing})`]] : []);
     $("#filters").innerHTML = opts.map(([k, l]) => `<button class="chip" type="button" data-filter="${k}" aria-pressed="${filter === k}">${l}</button>`).join("");
   }
   const rowHTML = (b) => { const st = statusOf(b); return `<li><button class="box ${b.id === hot ? "is-hot" : ""}" type="button" data-box="${esc(b.id)}"><span class="bn">${tag(b)}</span>${b.cat ? `<span class="bc">${esc(b.cat)}</span>` : `<span class="bc is-empty">Contents to add</span>`}<span class="st st-${st}">${STEP_NAME[st]}</span></button></li>`; };
@@ -402,8 +410,8 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     const all = list(), tst = tests();
     const testHTML = tst.length ? `<section><div class="g-head"><h3>Test labels</h3><span>${plural(tst.length, "label", "labels")}</span><button class="linkbtn" type="button" id="delTests">${delTestsArmed ? "Tap again to delete them all" : "Delete all"}</button></div><ul class="boxes">${tst.map(rowHTML).join("")}</ul></section>` : "";
     if (!all.length) { $("#register").innerHTML = `<div class="groups"><div class="empty"><b>No boxes yet</b>Create the first label above. Numbers start at 001 and are never reused.</div>${testHTML}</div>`; return; }
-    const shown = filter === "all" ? all : all.filter((b) => statusOf(b) === filter);
-    if (!shown.length) { $("#register").innerHTML = `<div class="groups"><div class="empty"><b>No ${esc(STEP_NAME[filter].toLowerCase())} boxes</b>Pick another filter to see the rest.</div>${testHTML}</div>`; return; }
+    const shown = filter === "all" ? all : filter === "nocat" ? all.filter((b) => !b.cat) : all.filter((b) => statusOf(b) === filter);
+    if (!shown.length) { $("#register").innerHTML = `<div class="groups"><div class="empty">${filter === "nocat" ? "<b>Every box has its contents</b>Nothing left to fill in." : `<b>No ${esc(STEP_NAME[filter].toLowerCase())} boxes</b>Pick another filter to see the rest.`}</div>${testHTML}</div>`; return; }
     const groups = savoyRooms().map((r) => ({ r, rows: shown.filter((b) => b.dest === r.id) })).filter((g) => g.rows.length);
     const loose = shown.filter((b) => !b.dest || !rooms[b.dest]);
     if (loose.length) groups.push({ r: null, rows: loose });
@@ -767,6 +775,8 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     }
   }
   $("#log").addEventListener("click", async (e) => {
+    const add = e.target.closest("[data-addc]");
+    if (add) { openSheet(add.dataset.addc, { ask: true }); return; }
     if (!e.target.closest("[data-undo]")) return;
     const last = log[0]; if (!last || !last.undo) return;
     try {
@@ -781,6 +791,7 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     $("#numIn").value = "";
     const r = await scan(id, "number");
     toast(r.text);
+    askIfBlank(id, r);
   });
 
   // Live camera
@@ -840,23 +851,39 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     if (lastSeen.id === id && now - lastSeen.at < 5000) { lastSeen.at = now; return; }
     lastSeen = { id, at: now };
     const r = await scan(id, "camera");
-    camMsg(r.text, r.kind); beep(r.kind === "moved");
+    const blank = r.kind !== "bad" && boxes[id] && !boxes[id].cat;
+    camMsg(r.text + (blank ? " · no contents yet" : ""), r.kind); beep(r.kind === "moved");
+    camAddId = blank ? id : null;
+    $("#camAdd").hidden = !blank;
+    if (blank) $("#camAdd").textContent = `Add contents for ${tag(boxes[id])}`;
   }
-  $("#scanBtn").addEventListener("click", openCam);
+  let camAddId = null;
+  $("#scanBtn").addEventListener("click", () => { camAddId = null; $("#camAdd").hidden = true; openCam(); });
   $("#camClose").addEventListener("click", closeCam);
+  $("#camAdd").addEventListener("click", () => { const id = camAddId; closeCam(); if (id) openSheet(id, { ask: true }); });
+  // After a scan of a box with no contents, open its sheet with the contents box ready to type in.
+  function askIfBlank(id, r) {
+    if (!r || r.kind === "bad" || !boxes[id] || boxes[id].cat) return;
+    openSheet(id, { ask: true });
+  }
 
   // ---------- Filters + box sheet ----------
   $("#filters").addEventListener("click", (e) => { const b = e.target.closest("[data-filter]"); if (!b) return; filter = b.dataset.filter; renderFilters(); renderRegister(); });
   let removeArmed = false, removeT;
-  function openSheet(id) {
+  function openSheet(id, opts) {
     const b = boxes[id]; if (!b) return;
     sheetId = id;
+    const ask = !!(opts && opts.ask) && !b.cat;
+    $("#sheetAsk").hidden = !ask;
+    if (ask) $("#sheetAsk").textContent = `${tag(b)} is ${STEP_NAME[statusOf(b)].toLowerCase()}. What's in it?`;
     $("#sheetNum").textContent = tag(b) + " · " + STEP_NAME[statusOf(b)];
     $("#sheetSeg").innerHTML = STEPS.map(([k, l]) => `<button type="button" data-step="${k}" aria-pressed="${statusOf(b) === k}">${l}</button>`).join("");
     $("#shCat").value = b.cat || "";
     $("#shDest").innerHTML = `<option value="">No room yet</option>` + savoyRooms().map((r) => `<option value="${esc(r.id)}" ${r.id === b.dest ? "selected" : ""}>${esc(r.name)}</option>`).join("");
     removeArmed = false; $("#shRemove").textContent = "Remove";
+    $("#shCat").toggleAttribute("autofocus", ask);
     const d = $("#sheet"); if (d.showModal) d.showModal(); else d.setAttribute("open", "");
+    if (ask) $("#shCat").focus();
   }
   function closeSheet() { const d = $("#sheet"); if (d.close) d.close(); else d.removeAttribute("open"); sheetId = null; }
   $("#register").addEventListener("click", (e) => { const b = e.target.closest("[data-box]"); if (b) openSheet(b.dataset.box); });
@@ -869,9 +896,10 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
   $("#shSave").addEventListener("click", async () => {
     if (!sheetId) return;
     const cat = $("#shCat").value.trim();
-    try { const r = await api("/api/boxes/" + sheetId, { method: "PATCH", body: JSON.stringify({ cat, dest: $("#shDest").value || null }) }); boxes[sheetId] = r.box; toast("Saved. Reprint the label if the room changed."); closeSheet(); render(); }
+    try { const r = await api("/api/boxes/" + sheetId, { method: "PATCH", body: JSON.stringify({ cat, dest: $("#shDest").value || null }) }); const roomChanged = (boxes[sheetId] && boxes[sheetId].dest) !== r.box.dest; boxes[sheetId] = r.box; toast(roomChanged ? "Saved. Reprint the label, since the room changed." : "Saved."); closeSheet(); render(); }
     catch (err) { toast("Couldn't save that change."); }
   });
+  $("#shCat").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("#shSave").click(); } });
   $("#shLabel").addEventListener("click", () => { if (!sheetId) return; current = sheetId; hot = sheetId; closeSheet(); render(); $("#lbCanvas").scrollIntoView({ behavior: "smooth", block: "center" }); });
   $("#shRemove").addEventListener("click", async () => {
     if (!sheetId) return;
@@ -892,6 +920,7 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     const r = await scan(id, "link");
     toast(r.text);
     const row = document.querySelector(`[data-box="${id}"]`); if (row) row.scrollIntoView({ block: "center" });
+    askIfBlank(id, r);
   }
 
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(drawPreview);
