@@ -93,9 +93,14 @@ async function ensurePhotos(DB) {
   ]);
   photosReady = true;
 }
+// Writes to a box check it hasn't changed since it was read (compare and swap). When two land
+// together, the loser waits a moment, re-reads and tries again.
+const RETRIES = 8;
+const backoff = (attempt) => new Promise((r) => setTimeout(r, attempt * (15 + Math.random() * 35)));
 // Change a box's list of photos without losing a scan or edit made at the same moment.
 async function updatePhotoList(DB, id, change) {
-  for (let attempt = 0; attempt < 5; attempt++) {
+  for (let attempt = 0; attempt < RETRIES; attempt++) {
+    if (attempt) await backoff(attempt);
     const cur = await getDoc(DB, "boxes", id);
     if (!cur) return null;
     const list = Array.isArray(cur.data.photos) ? cur.data.photos.filter((p) => typeof p === "string") : [];
@@ -206,7 +211,9 @@ export async function handleApi(request, env, parts) {
       await ensurePhotos(DB);
       const pid = "p" + crypto.randomUUID().replace(/-/g, "");
       await DB.prepare("INSERT INTO photos (id, box, mime, data, created_at) VALUES (?, ?, ?, ?, ?)").bind(pid, id, mime, buf, Date.now()).run();
-      const box = await updatePhotoList(DB, id, (list) => list.concat(pid));
+      let box = null;
+      try { box = await updatePhotoList(DB, id, (list) => list.concat(pid)); }
+      catch (e) { await DB.prepare("DELETE FROM photos WHERE id = ?").bind(pid).run(); return fail(409, e.message); }
       if (!box) { await DB.prepare("DELETE FROM photos WHERE id = ?").bind(pid).run(); return fail(404, "No such box."); }
       return json({ id, pid, box }, 201);
     }
@@ -240,16 +247,24 @@ export async function handleApi(request, env, parts) {
         const body = await readBody(request);
         if (!body) return fail(400, "Send JSON.");
         const f = cleanBoxFields(body);
-        // Until loading opens, a box can't be moved forward past Packed (moving back is fine).
-        const at = loadFrom(env);
-        if (f.status && Date.now() < at && STEPS.indexOf(f.status) > PACKED && STEPS.indexOf(f.status) > STEPS.indexOf(statusOf(cur.data))) {
-          return json({ error: `Loading opens ${loadingText(at)}. Until then boxes can only go as far as Packed.`, locked: true, loadFrom: at }, 409);
+        // Write only if the box hasn't changed since it was read, so a photo or scan that
+        // lands at the same moment isn't overwritten. Re-read and retry if it has.
+        for (let attempt = 0, doc = cur; attempt < RETRIES; attempt++) {
+          if (attempt) { await backoff(attempt); doc = await getDoc(DB, "boxes", id); }
+          if (!doc) return fail(404, "No such box.");
+          // Until loading opens, a box can't be moved forward past Packed (moving back is fine).
+          const at = loadFrom(env);
+          if (f.status && Date.now() < at && STEPS.indexOf(f.status) > PACKED && STEPS.indexOf(f.status) > STEPS.indexOf(statusOf(doc.data))) {
+            return json({ error: `Loading opens ${loadingText(at)}. Until then boxes can only go as far as Packed.`, locked: true, loadFrom: at }, 409);
+          }
+          const next = { ...doc.data, ...f };
+          if (f.status) next.statusAt = new Date().toISOString();
+          if (body.resetScan === true) next.scannedAt = null;
+          const res = await DB.prepare("UPDATE docs SET data = ?, updated_at = ? WHERE col = 'boxes' AND id = ? AND updated_at = ?")
+            .bind(JSON.stringify(next), Math.max(Date.now(), doc.at + 1), id, doc.at).run();
+          if (res.meta && res.meta.changes === 1) return json({ id, box: next });
         }
-        const next = { ...cur.data, ...f };
-        if (f.status) next.statusAt = new Date().toISOString();
-        if (body.resetScan === true) next.scannedAt = null;
-        await putDoc(DB, "boxes", id, next);
-        return json({ id, box: next });
+        return fail(409, "Someone else changed that box at the same moment. Try again.");
       }
       if (method === "DELETE") {
         await DB.prepare("DELETE FROM docs WHERE col = 'boxes' AND id = ?").bind(id).run();
