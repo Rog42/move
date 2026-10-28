@@ -20,6 +20,7 @@ database_id = "dfe4fa59-944a-435f-9dbc-47a78cbc1702"
 ACCESS_TEAM_DOMAIN = "rog42"        # Zero Trust team name (rog42.cloudflareaccess.com)
 # ACCESS_AUD = ""                   # optional: the Access application's AUD tag
 # LISTS_OPEN = "1"                  # opens the checklists to anyone with the link
+# LOAD_FROM = "2026-11-06T17:00:00+11:00"   # boxes can't go past Packed before this (the default)
 
 # Worker Previews (one per branch / pull request). They don't inherit the settings
 # above, so they get their own test database and the same Access team name.

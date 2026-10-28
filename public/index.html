@@ -162,6 +162,24 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
 .seg button { border: 0; background: var(--bg); padding: 10px 2px; font-weight: 600; font-size: 12.5px; color: var(--muted); }
 .seg button + button { border-left: 1px solid var(--line); }
 .seg button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+.seg button:disabled { opacity: .4; cursor: not-allowed; }
+.vh { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; clip-path: inset(50%); }
+/* A packed box scanned before loading opens: what it is and where it goes, nothing moved */
+.sheet-held { display: flex; gap: 12px; align-items: stretch; padding: 10px 12px; border-radius: 10px; background: var(--tape-soft); }
+.sheet-held .sw { display: block; width: 16px; height: auto; min-height: 44px; align-self: stretch; flex: none; border-radius: 5px; background: var(--sw); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink) 25%, transparent); }
+.sheet-held b { display: block; font-size: 16.5px; }
+.sheet-held span { display: block; font-size: 13.5px; color: var(--muted); }
+.sheet-lock { margin: -6px 0 0; font-size: 12.5px; color: var(--muted); }
+.photos { display: flex; flex-wrap: wrap; gap: 8px; text-transform: none; letter-spacing: 0; }
+.ph { position: relative; width: 78px; height: 78px; border-radius: 10px; overflow: hidden; background: var(--bg); border: 1px solid var(--line); display: flex; align-items: center; justify-content: center; font-size: 12.5px; font-weight: 600; color: var(--muted); text-align: center; line-height: 1.2; padding: 4px; }
+.ph:has(img) { padding: 0; }
+.ph a { display: block; width: 100%; height: 100%; }
+.ph img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.ph-del { position: absolute; top: 4px; right: 4px; border: 0; border-radius: 99px; background: rgba(0,0,0,.62); color: #FFFFFF; font-size: 12px; font-weight: 700; padding: 3px 8px; }
+.ph-del.is-armed { background: var(--late); }
+.ph-add { cursor: pointer; border: 1.5px dashed var(--accent); color: var(--accent); background: var(--accent-soft); }
+.cam-acts { display: flex; gap: 10px; }
+.cam-acts .btn { flex: 1; }
 
 .toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(18px + env(safe-area-inset-bottom, 0px)); background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 10px; font-size: 14px; max-width: calc(100% - 32px); z-index: 60; }
 [hidden] { display: none !important; }
@@ -295,7 +313,7 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
   <div class="cam-top" id="camTop">Point at a box label</div>
   <div class="cam-bar">
     <div class="cam-msg" id="camMsg" aria-live="assertive">Hold the QR code inside the square</div>
-    <button class="btn" type="button" id="camAdd" hidden>Add contents</button>
+    <div class="cam-acts"><button class="btn" type="button" id="camAdd" hidden>Add contents</button><button class="btn" type="button" id="camPhoto" hidden>Take photo</button></div>
     <button class="btn" type="button" id="camClose">Done scanning</button>
   </div>
 </div>
@@ -303,9 +321,13 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
 <dialog class="sheet" id="sheet" aria-labelledby="sheetNum">
   <div class="sheet-in">
     <div class="sheet-head"><b id="sheetNum">000</b><button class="linkbtn" type="button" id="sheetClose">Close</button></div>
+    <div class="sheet-held" id="sheetHeld" hidden></div>
     <div class="seg" id="sheetSeg" role="group" aria-label="Stage"></div>
+    <p class="sheet-lock" id="sheetLock" hidden></p>
     <p class="sheet-ask" id="sheetAsk" hidden></p>
     <label class="fld">What's in it (optional) <input type="text" id="shCat" maxlength="40" list="catList" autocomplete="off"></label>
+    <div class="fld"><span>Photos of what's in it</span><div class="photos" id="shPhotos"></div></div>
+    <input type="file" id="shPhotoIn" class="vh" accept="image/*" capture="environment" tabindex="-1" aria-hidden="true">
     <label class="fld">Goes to <select id="shDest"></select></label>
     <div class="row">
       <button class="btn btn-primary" type="button" id="shSave">Save changes</button>
@@ -343,6 +365,19 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
   const plural = (n, a, b) => `${n} ${n === 1 ? a : b}`;
 
   let rooms = {}, boxes = {}, loaded = false;
+  // Nothing goes past Packed until the truck is loaded. The server sets the time and enforces it.
+  let loadAt = Date.parse("2026-11-06T17:00:00+11:00");
+  const PACKED_I = STEPS.findIndex(([k]) => k === "packed");
+  const lockedNow = () => Date.now() < loadAt;
+  function loadingText(at) {
+    const d = new Date(at);
+    const day = d.toLocaleDateString("en-AU", { timeZone: "Australia/Sydney", weekday: "short", day: "numeric", month: "short" });
+    const time = d.toLocaleTimeString("en-AU", { timeZone: "Australia/Sydney", hour: "numeric", minute: "2-digit" }).replace(":00", "").replace(/\s/g, "");
+    return `${day} at ${time}`;
+  }
+  const photosOf = (b) => (b && Array.isArray(b.photos) ? b.photos.filter((p) => /^p[0-9a-f]{32}$/.test(p)) : []);
+  const hasContents = (b) => !!(b && (b.cat || photosOf(b).length));
+  const whatText = (b) => (b.cat ? b.cat : photosOf(b).length ? plural(photosOf(b).length, "photo", "photos") : "");
   let current = null, filter = "all", hot = null, log = [], sheetId = null;
   let size = "100x150";
   try { size = localStorage.getItem("labelSize") || size; } catch (e) {}
@@ -384,6 +419,7 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     try {
       const s = await api("/api/state");
       rooms = s.rooms || {}; boxes = s.boxes || {}; loaded = true;
+      if (num(s.loadFrom)) loadAt = num(s.loadFrom);
       render();
     } catch (e) { if (!loaded) $("#register").innerHTML = `<div class="empty"><b>Can't reach the box list</b>${esc(e.message)}</div>`; }
   }
@@ -408,22 +444,22 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
 
   function renderLog() {
     $("#log").innerHTML = log.slice(0, 5).map((e, i) => {
-      const b = boxes[e.id], need = b && !b.cat;
-      return `<li><b>${esc(e.t)}</b> ${esc((b && b.cat) || "")} → ${esc(e.note)}${need ? ` <button class="linkbtn" type="button" data-addc="${esc(e.id)}">Add contents</button>` : ""}${i === 0 && e.undo ? ` <button class="linkbtn" type="button" data-undo="1">Undo</button>` : ""}</li>`;
+      const b = boxes[e.id], need = b && !hasContents(b);
+      return `<li><b>${esc(e.t)}</b> ${esc((b && whatText(b)) || "")} → ${esc(e.note)}${need ? ` <button class="linkbtn" type="button" data-addc="${esc(e.id)}">Add contents</button>` : ""}${i === 0 && e.undo ? ` <button class="linkbtn" type="button" data-undo="1">Undo</button>` : ""}</li>`;
     }).join("");
   }
   function renderFilters() {
-    const missing = list().filter((b) => !b.cat).length;
+    const missing = list().filter((b) => !hasContents(b)).length;
     const opts = [["all", "All"]].concat(STEPS, missing || filter === "nocat" ? [["nocat", `Contents to add (${missing})`]] : []);
     $("#filters").innerHTML = opts.map(([k, l]) => `<button class="chip" type="button" data-filter="${k}" aria-pressed="${filter === k}">${l}</button>`).join("");
   }
-  const rowHTML = (b) => { const st = statusOf(b); return `<li><button class="box ${b.id === hot ? "is-hot" : ""}" type="button" data-box="${esc(b.id)}"><span class="bn">${tag(b)}</span>${b.cat ? `<span class="bc">${esc(b.cat)}</span>` : `<span class="bc is-empty">Contents to add</span>`}<span class="st st-${st}">${STEP_NAME[st]}</span></button></li>`; };
+  const rowHTML = (b) => { const st = statusOf(b); return `<li><button class="box ${b.id === hot ? "is-hot" : ""}" type="button" data-box="${esc(b.id)}"><span class="bn">${tag(b)}</span>${hasContents(b) ? `<span class="bc">${esc(whatText(b))}</span>` : `<span class="bc is-empty">Contents to add</span>`}<span class="st st-${st}">${STEP_NAME[st]}</span></button></li>`; };
   function renderRegister() {
     if (!loaded) return;
     const all = list(), tst = tests();
     const testHTML = tst.length ? `<section><div class="g-head"><h3>Test labels</h3><span>${plural(tst.length, "label", "labels")}</span><button class="linkbtn" type="button" id="delTests">${delTestsArmed ? "Tap again to delete them all" : "Delete all"}</button></div><ul class="boxes">${tst.map(rowHTML).join("")}</ul></section>` : "";
     if (!all.length) { $("#register").innerHTML = `<div class="groups"><div class="empty"><b>No boxes yet</b>Create the first label above. Numbers start at 001 and are never reused.</div>${testHTML}</div>`; return; }
-    const shown = filter === "all" ? all : filter === "nocat" ? all.filter((b) => !b.cat) : all.filter((b) => statusOf(b) === filter);
+    const shown = filter === "all" ? all : filter === "nocat" ? all.filter((b) => !hasContents(b)) : all.filter((b) => statusOf(b) === filter);
     if (!shown.length) { $("#register").innerHTML = `<div class="groups"><div class="empty">${filter === "nocat" ? "<b>Every box has its contents</b>Nothing left to fill in." : `<b>No ${esc(STEP_NAME[filter].toLowerCase())} boxes</b>Pick another filter to see the rest.`}</div>${testHTML}</div>`; return; }
     const groups = savoyRooms().map((r) => ({ r, rows: shown.filter((b) => b.dest === r.id) })).filter((g) => g.rows.length);
     const loose = shown.filter((b) => !b.dest || !rooms[b.dest]);
@@ -791,6 +827,7 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
       let note, kind;
       if (r.result === "moved") { note = STEP_NAME[r.to]; kind = "moved"; log.unshift({ id, t: tag(r.box), cat: r.box.cat, note, from: r.from, undo: true }); }
       else if (r.result === "recent") { note = `already scanned, still ${STEP_NAME[r.to].toLowerCase()}`; kind = "warn"; }
+      else if (r.result === "held") { if (num(r.loadFrom)) loadAt = num(r.loadFrom); note = `still ${STEP_NAME[r.to].toLowerCase()}, loading opens ${loadingText(loadAt)}`; kind = "held"; }
       else { note = "already unpacked"; kind = "warn"; }
       if (kind !== "moved") log.unshift({ id, t: tag(r.box), cat: r.box.cat, note, undo: false });
       log = log.slice(0, 20);
@@ -818,7 +855,7 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     $("#numIn").value = "";
     const r = await scan(id, "number");
     toast(r.text);
-    askIfBlank(id, r);
+    if (r.kind === "held") openSheet(id, { held: true }); else askIfBlank(id, r);
   });
 
   // Live camera
@@ -878,16 +915,24 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     if (lastSeen.id === id && now - lastSeen.at < 5000) { lastSeen.at = now; return; }
     lastSeen = { id, at: now };
     const r = await scan(id, "camera");
-    const blank = r.kind !== "bad" && boxes[id] && !boxes[id].cat;
-    camMsg(r.text + (blank ? " · no contents yet" : ""), r.kind); beep(r.kind === "moved");
-    camAddId = blank ? id : null;
-    $("#camAdd").hidden = !blank;
-    if (blank) $("#camAdd").textContent = `Add contents for ${tag(boxes[id])}`;
+    const b = r.kind !== "bad" ? boxes[id] : null;
+    if (r.kind === "held" && b) {
+      // Before loading opens: say what the box is and where it goes, and leave it packed.
+      camMsg(`${tag(b)} is packed for ${labelRoom(b.dest) || "no room yet"}${b.cat ? " · " + b.cat : ""}. Loading opens ${loadingText(loadAt)}.`, "warn");
+    } else {
+      camMsg(r.text + (b && !hasContents(b) ? " · no contents yet" : ""), r.kind);
+    }
+    beep(r.kind === "moved");
+    camBox = b ? { id, held: r.kind === "held" } : null;
+    $("#camAdd").hidden = $("#camPhoto").hidden = !b;
+    if (b) $("#camAdd").textContent = b.cat ? "Edit contents" : "Add contents";
   }
-  let camAddId = null;
-  $("#scanBtn").addEventListener("click", () => { camAddId = null; $("#camAdd").hidden = true; openCam(); });
+  let camBox = null;
+  $("#scanBtn").addEventListener("click", () => { camBox = null; $("#camAdd").hidden = $("#camPhoto").hidden = true; openCam(); });
   $("#camClose").addEventListener("click", closeCam);
-  $("#camAdd").addEventListener("click", () => { const id = camAddId; closeCam(); if (id) openSheet(id, { ask: true }); });
+  $("#camAdd").addEventListener("click", () => { const c = camBox; closeCam(); if (c) openSheet(c.id, { held: c.held, focus: true }); });
+  // Opens the phone's camera straight away. The click has to happen inside this tap, so no awaiting first.
+  $("#camPhoto").addEventListener("click", () => { const c = camBox; closeCam(); if (c) { openSheet(c.id, { held: c.held }); $("#shPhotoIn").click(); } });
   // After a scan of a box with no contents, open its sheet with the contents box ready to type in.
   function askIfBlank(id, r) {
     if (!r || r.kind === "bad" || !boxes[id] || boxes[id].cat) return;
@@ -900,25 +945,85 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
   function openSheet(id, opts) {
     const b = boxes[id]; if (!b) return;
     sheetId = id;
-    const ask = !!(opts && opts.ask) && !b.cat;
-    $("#sheetAsk").hidden = !ask;
+    const ask = !!(opts && opts.ask) && !hasContents(b);
+    const held = !!(opts && opts.held);
+    const room = rooms[b.dest];
+    $("#sheetHeld").hidden = !held;
+    if (held) $("#sheetHeld").innerHTML = `<i class="sw" style="--sw:${room ? hexOf(room.colour) || "transparent" : "transparent"}"></i><div><b>${STEP_NAME[statusOf(b)]} · ${esc(room ? room.name : "No room yet")}</b><span>Loading opens ${esc(loadingText(loadAt))}, so this scan didn't move it.</span></div>`;
+    const askHeld = held && !hasContents(b);
+    $("#sheetAsk").hidden = !(ask || askHeld);
     if (ask) $("#sheetAsk").textContent = `${tag(b)} is ${STEP_NAME[statusOf(b)].toLowerCase()}. What's in it?`;
+    else if (askHeld) $("#sheetAsk").textContent = "Nothing listed yet. Type what's in it or take a photo.";
     $("#sheetNum").textContent = tag(b) + " · " + STEP_NAME[statusOf(b)];
-    $("#sheetSeg").innerHTML = STEPS.map(([k, l]) => `<button type="button" data-step="${k}" aria-pressed="${statusOf(b) === k}">${l}</button>`).join("");
+    const at = STEPS.findIndex(([k]) => k === statusOf(b)), lock = lockedNow();
+    $("#sheetSeg").innerHTML = STEPS.map(([k, l], i) => `<button type="button" data-step="${k}" aria-pressed="${statusOf(b) === k}" ${lock && i > PACKED_I && i > at ? "disabled" : ""}>${l}</button>`).join("");
+    $("#sheetLock").hidden = !lock;
+    if (lock) $("#sheetLock").textContent = `Loaded, In room and Unpacked open ${loadingText(loadAt)}.`;
     $("#shCat").value = b.cat || "";
+    delPhotoArmed = null; renderSheetPhotos();
     $("#shDest").innerHTML = `<option value="">No room yet</option>` + savoyRooms().map((r) => `<option value="${esc(r.id)}" ${r.id === b.dest ? "selected" : ""}>${esc(r.name)}</option>`).join("");
     removeArmed = false; $("#shRemove").textContent = "Remove";
-    $("#shCat").toggleAttribute("autofocus", ask);
+    const focus = ask || !!(opts && opts.focus);
+    $("#shCat").toggleAttribute("autofocus", focus);
     const d = $("#sheet"); if (d.showModal) d.showModal(); else d.setAttribute("open", "");
-    if (ask) $("#shCat").focus();
+    if (focus) $("#shCat").focus();
   }
+
+  // ---------- Photos of what's in a box ----------
+  let photoBusy = 0, delPhotoArmed = null, delPhotoT;
+  function renderSheetPhotos() {
+    const b = boxes[sheetId]; if (!b) return;
+    $("#shPhotos").innerHTML = photosOf(b).map((p) => `<div class="ph"><a href="/api/photos/${p}" target="_blank" rel="noopener"><img src="/api/photos/${p}" alt="Photo of what's in ${tag(b)}" loading="lazy"></a><button type="button" class="ph-del ${delPhotoArmed === p ? "is-armed" : ""}" data-delphoto="${p}" aria-label="Remove this photo">${delPhotoArmed === p ? "Remove?" : "×"}</button></div>`).join("")
+      + (photoBusy ? `<div class="ph">Saving…</div>` : "")
+      + `<label class="ph ph-add" for="shPhotoIn">Take photo</label>`;
+  }
+  // Phone photos are several MB; shrink to 1600 px on the long side as a JPEG before sending.
+  async function shrinkPhoto(file) {
+    let img;
+    try { img = await createImageBitmap(file, { imageOrientation: "from-image" }); }
+    catch (e) {
+      img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => rej(new Error("That file isn't a photo the browser can read.")); i.src = URL.createObjectURL(file); });
+    }
+    const w = img.naturalWidth || img.width, h = img.naturalHeight || img.height, k = Math.min(1, 1600 / Math.max(w, h));
+    const c = document.createElement("canvas"); c.width = Math.max(1, Math.round(w * k)); c.height = Math.max(1, Math.round(h * k));
+    c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+    let q = 0.8, blob = null;
+    do { blob = await new Promise((res) => c.toBlob(res, "image/jpeg", q)); q -= 0.15; } while (blob && blob.size > 1400000 && q > 0.3);
+    if (!blob) throw new Error("Couldn't read that photo.");
+    return blob;
+  }
+  $("#shPhotoIn").addEventListener("change", async (e) => {
+    const files = [...(e.target.files || [])]; e.target.value = "";
+    const id = sheetId; if (!id || !files.length) return;
+    for (const f of files) {
+      photoBusy++; if (sheetId === id) renderSheetPhotos();
+      try {
+        const blob = await shrinkPhoto(f);
+        const r = await fetch("/api/boxes/" + encodeURIComponent(id) + "/photos", { method: "POST", headers: { "content-type": "image/jpeg" }, body: blob });
+        let body = null; try { body = await r.json(); } catch (err) {}
+        if (!r.ok) throw new Error((body && body.error) || "Couldn't save that photo.");
+        boxes[id] = body.box; toast(`Photo added to ${tag(body.box)}.`);
+        if (sheetId === id) $("#sheetAsk").hidden = true; // it has contents now
+      } catch (err) { toast(err.message || "Couldn't save that photo. Check the signal and try again."); }
+      finally { photoBusy--; if (sheetId === id) renderSheetPhotos(); render(); }
+    }
+  });
+  $("#shPhotos").addEventListener("click", async (e) => {
+    const btn = e.target.closest("[data-delphoto]"); if (!btn || !sheetId) return;
+    const pid = btn.dataset.delphoto;
+    if (delPhotoArmed !== pid) { delPhotoArmed = pid; renderSheetPhotos(); clearTimeout(delPhotoT); delPhotoT = setTimeout(() => { delPhotoArmed = null; renderSheetPhotos(); }, 3000); return; }
+    delPhotoArmed = null;
+    try { const r = await api("/api/photos/" + pid, { method: "DELETE" }); if (r.box) boxes[r.id] = r.box; toast("Photo removed."); }
+    catch (err) { toast("Couldn't remove that photo."); }
+    renderSheetPhotos(); render();
+  });
   function closeSheet() { const d = $("#sheet"); if (d.close) d.close(); else d.removeAttribute("open"); sheetId = null; }
   $("#register").addEventListener("click", (e) => { const b = e.target.closest("[data-box]"); if (b) openSheet(b.dataset.box); });
   $("#sheetClose").addEventListener("click", closeSheet);
   $("#sheetSeg").addEventListener("click", async (e) => {
     const btn = e.target.closest("[data-step]"); if (!btn || !sheetId) return;
     try { const r = await api("/api/boxes/" + sheetId, { method: "PATCH", body: JSON.stringify({ status: btn.dataset.step, resetScan: true }) }); boxes[sheetId] = r.box; openSheet(sheetId); render(); }
-    catch (err) { toast("Couldn't change the stage."); }
+    catch (err) { toast(err.status === 409 ? err.message : "Couldn't change the stage."); }
   });
   $("#shSave").addEventListener("click", async () => {
     if (!sheetId) return;
@@ -947,7 +1052,7 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     const r = await scan(id, "link");
     toast(r.text);
     const row = document.querySelector(`[data-box="${id}"]`); if (row) row.scrollIntoView({ block: "center" });
-    askIfBlank(id, r);
+    if (r.kind === "held") openSheet(id, { held: true }); else askIfBlank(id, r);
   }
 
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(drawPreview);

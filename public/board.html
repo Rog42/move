@@ -128,6 +128,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   const SHOW_TESTS = new URLSearchParams(location.search).has("test");
   if (SHOW_TESTS) $("#title").textContent = "Move board (with test labels)";
   const tagOf = (b) => (b.test ? "T" : "") + pad3(b.n);
+  const photoCount = (b) => (Array.isArray(b.photos) ? b.photos.length : 0);
 
   let sort = "num";
   try { sort = localStorage.getItem("boardSort") === "room" ? "room" : "num"; } catch (e) {}
@@ -147,7 +148,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
     const r = rooms[b.dest];
     return `<div class="card ${fresh ? "is-new" : ""}" style="--sw:${r ? hexOf(r.colour) || "var(--line)" : "var(--line)"}">
       <span class="n">${tagOf(b)}</span>
-      ${b.cat ? `<span class="what">${esc(b.cat)}</span>` : `<span class="what is-empty">Contents not set</span>`}
+      ${b.cat ? `<span class="what">${esc(b.cat)}</span>` : photoCount(b) ? `<span class="what">${photoCount(b) === 1 ? "1 photo" : photoCount(b) + " photos"}</span>` : `<span class="what is-empty">Contents not set</span>`}
       <span class="rm">→ ${esc(r ? r.name : "No room yet")}</span></div>`;
   }
 
@@ -156,7 +157,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
     const all = Object.entries(boxes).map(([id, b]) => Object.assign({ id }, b)).filter((b) => SHOW_TESTS || !b.test);
     const fresh = new Set(all.filter((b) => b.statusAt && now - when(b.statusAt) < FRESH_MS).map((b) => b.id));
     // Skip the redraw when nothing visible has changed, so the screen doesn't flicker.
-    const sig = JSON.stringify([sort, all.map((b) => [b.id, statusOf(b), b.cat || "", b.dest || ""]).sort(), [...fresh].sort(), roomList().map((r) => [r.id, r.name, hexOf(r.colour)])]);
+    const sig = JSON.stringify([sort, all.map((b) => [b.id, statusOf(b), b.cat || "", b.dest || "", photoCount(b)]).sort(), [...fresh].sort(), roomList().map((r) => [r.id, r.name, hexOf(r.colour)])]);
     if (!force && sig === lastSig) return;
     lastSig = sig;
 
