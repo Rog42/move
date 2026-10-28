@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- A moving truck with a taped box on board, on the app's deep green -->
+  <rect width="64" height="64" rx="14" fill="#0D6A56"/>
+  <rect x="7" y="17" width="30" height="24" rx="3" fill="#FFFFFF"/>
+  <rect x="15" y="17" width="7" height="9" fill="#F2B23A"/>
+  <path d="M39 24h9.5a3 3 0 0 1 2.5 1.3l5.2 7.7a3 3 0 0 1 .5 1.7V41a2 2 0 0 1-2 2H39z" fill="#FFFFFF"/>
+  <path d="M42 27.5h6l3.8 5.5H42z" fill="#0D6A56"/>
+  <rect x="7" y="38" width="49.7" height="5" rx="1.5" fill="#FFFFFF"/>
+  <circle cx="17" cy="45" r="5.5" fill="#0D6A56"/><circle cx="17" cy="45" r="3.6" fill="#FFFFFF"/>
+  <circle cx="47" cy="45" r="5.5" fill="#0D6A56"/><circle cx="47" cy="45" r="3.6" fill="#FFFFFF"/>
+</svg>
