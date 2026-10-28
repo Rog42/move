@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- A taped moving box on the app's deep green -->
+  <rect width="64" height="64" rx="14" fill="#0D6A56"/>
+  <path d="M32 9 54 20 32 31 10 20z" fill="#FFFFFF"/>
+  <path d="M10 22.5 30.5 33v22L10 44.5z" fill="#D9EEE7"/>
+  <path d="M54 22.5 33.5 33v22L54 44.5z" fill="#FFFFFF"/>
+  <path d="M20.5 14.2 42.5 25.6 42.5 32 38 34.3 38 27.9 16 16.5z" fill="#F2B23A"/>
+</svg>
