@@ -9,6 +9,10 @@
 //   DELETE /api/boxes/:id             remove a box (its number is never reused)
 //   DELETE /api/boxes?test=1          remove every test label (T001...) and restart test numbering
 //   POST   /api/scan/:id              move a box one step: labelled > packed > loaded > inroom > unpacked
+//                                     Before loading opens (LOAD_FROM), a packed box stays packed: result "held"
+//   POST   /api/boxes/:id/photos      add a photo of what's in a box (raw JPEG, PNG or WebP body)
+//   GET    /api/photos/:pid           the photo itself
+//   DELETE /api/photos/:pid           remove a photo
 //
 // Checklists. Closed until Cloudflare Access is set up (ACCESS_TEAM_DOMAIN) or LISTS_OPEN=1; see lib/access.js:
 //   GET    /api/lists/state           items + meta
@@ -20,7 +24,14 @@
 import { listsAccess } from "./access.js";
 
 const STEPS = ["labelled", "packed", "loaded", "inroom", "unpacked"];
+const PACKED = STEPS.indexOf("packed");
 const SCAN_GUARD_MS = 15000;
+// Nothing is loaded before the truck: Fri 6 Nov 2026, 5pm Sydney time. LOAD_FROM in wrangler.toml can move it.
+const LOAD_FROM_DEFAULT = "2026-11-06T17:00:00+11:00";
+const PHOTO_MAX_BYTES = 1500000; // D1 holds up to 2 MB in one value; the app sends about 200-400 KB
+const PHOTO_MAX_PER_BOX = 20;
+const PHOTO_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+const PHOTO_ID_RE = /^p[0-9a-f]{32}$/;
 const LIST_COLS = new Set(["items", "meta"]);
 const ID_RE = /^[A-Za-z0-9_\-.~:@+]{1,120}$/;
 
@@ -62,6 +73,39 @@ async function collection(DB, col) {
   for (const r of results) out[r.id] = JSON.parse(r.data);
   return out;
 }
+function loadFrom(env) {
+  const t = Date.parse((env && env.LOAD_FROM) || "");
+  return Number.isFinite(t) ? t : Date.parse(LOAD_FROM_DEFAULT);
+}
+function loadingText(at) {
+  const d = new Date(at);
+  const day = d.toLocaleDateString("en-AU", { timeZone: "Australia/Sydney", weekday: "short", day: "numeric", month: "short" });
+  const time = d.toLocaleTimeString("en-AU", { timeZone: "Australia/Sydney", hour: "numeric", minute: "2-digit" }).replace(":00", "").replace(/\s/g, "");
+  return `${day} at ${time}`;
+}
+// Photos live in their own table, made the first time it's needed.
+let photosReady = false;
+async function ensurePhotos(DB) {
+  if (photosReady) return;
+  await DB.batch([
+    DB.prepare("CREATE TABLE IF NOT EXISTS photos (id TEXT PRIMARY KEY, box TEXT NOT NULL, mime TEXT NOT NULL, data BLOB NOT NULL, created_at INTEGER NOT NULL)"),
+    DB.prepare("CREATE INDEX IF NOT EXISTS photos_box ON photos (box)"),
+  ]);
+  photosReady = true;
+}
+// Change a box's list of photos without losing a scan or edit made at the same moment.
+async function updatePhotoList(DB, id, change) {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const cur = await getDoc(DB, "boxes", id);
+    if (!cur) return null;
+    const list = Array.isArray(cur.data.photos) ? cur.data.photos.filter((p) => typeof p === "string") : [];
+    const next = { ...cur.data, photos: change(list) };
+    const res = await DB.prepare("UPDATE docs SET data = ?, updated_at = ? WHERE col = 'boxes' AND id = ? AND updated_at = ?")
+      .bind(JSON.stringify(next), Math.max(Date.now(), cur.at + 1), id, cur.at).run();
+    if (res.meta && res.meta.changes === 1) return next;
+  }
+  throw new Error("The box kept changing while the photo was saved. Try again.");
+}
 function statusOf(b) {
   return STEPS.includes(b.status) ? b.status : b.arrived === true ? "inroom" : "labelled";
 }
@@ -82,7 +126,7 @@ export async function handleApi(request, env, parts) {
     // ---------- Boxes (public) ----------
     if (parts[0] === "state" && parts.length === 1 && method === "GET") {
       const [rooms, boxes] = await Promise.all([collection(DB, "rooms"), collection(DB, "boxes")]);
-      return json({ rooms, boxes, now: Date.now() });
+      return json({ rooms, boxes, now: Date.now(), loadFrom: loadFrom(env) });
     }
 
     if (parts[0] === "boxes" && parts.length === 1 && method === "POST") {
@@ -140,8 +184,51 @@ export async function handleApi(request, env, parts) {
     if (parts[0] === "boxes" && parts.length === 1 && method === "DELETE") {
       if (new URL(request.url).searchParams.get("test") !== "1") return fail(400, "Only test labels can be deleted in bulk.");
       const res = await DB.prepare("DELETE FROM docs WHERE col = 'boxes' AND id LIKE 't%'").run();
+      await ensurePhotos(DB);
+      await DB.prepare("DELETE FROM photos WHERE box LIKE 't%'").run();
       await DB.prepare("INSERT INTO counters (k, v) VALUES ('test', 0) ON CONFLICT (k) DO UPDATE SET v = 0").run();
       return json({ deleted: (res.meta && res.meta.changes) || 0 });
+    }
+
+    // A photo of what's in a box. The body is the image itself, already shrunk by the app.
+    if (parts[0] === "boxes" && parts[2] === "photos" && parts.length === 3 && method === "POST") {
+      const id = parts[1];
+      if (!ID_RE.test(id)) return fail(400, "Bad box id.");
+      const mime = (request.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
+      if (!PHOTO_TYPES.has(mime)) return fail(415, "Send the photo as a JPEG, PNG or WebP image.");
+      if (Number(request.headers.get("content-length") || 0) > PHOTO_MAX_BYTES) return fail(413, "That photo is too big to save.");
+      const cur = await getDoc(DB, "boxes", id);
+      if (!cur) return fail(404, "No such box.");
+      if (Array.isArray(cur.data.photos) && cur.data.photos.length >= PHOTO_MAX_PER_BOX) return fail(400, `That box already has ${PHOTO_MAX_PER_BOX} photos. Remove one first.`);
+      const buf = await request.arrayBuffer();
+      if (!buf.byteLength) return fail(400, "The photo was empty.");
+      if (buf.byteLength > PHOTO_MAX_BYTES) return fail(413, "That photo is too big to save.");
+      await ensurePhotos(DB);
+      const pid = "p" + crypto.randomUUID().replace(/-/g, "");
+      await DB.prepare("INSERT INTO photos (id, box, mime, data, created_at) VALUES (?, ?, ?, ?, ?)").bind(pid, id, mime, buf, Date.now()).run();
+      const box = await updatePhotoList(DB, id, (list) => list.concat(pid));
+      if (!box) { await DB.prepare("DELETE FROM photos WHERE id = ?").bind(pid).run(); return fail(404, "No such box."); }
+      return json({ id, pid, box }, 201);
+    }
+
+    if (parts[0] === "photos" && parts.length === 2) {
+      const pid = parts[1];
+      if (!PHOTO_ID_RE.test(pid)) return fail(400, "Bad photo id.");
+      await ensurePhotos(DB);
+      if (method === "GET") {
+        const row = await DB.prepare("SELECT mime, data FROM photos WHERE id = ?").bind(pid).first();
+        if (!row) return fail(404, "No such photo.");
+        return new Response(new Uint8Array(row.data), {
+          headers: { "content-type": row.mime, "cache-control": "public, max-age=31536000, immutable", "x-content-type-options": "nosniff" },
+        });
+      }
+      if (method === "DELETE") {
+        const row = await DB.prepare("SELECT box FROM photos WHERE id = ?").bind(pid).first();
+        if (!row) return fail(404, "No such photo.");
+        await DB.prepare("DELETE FROM photos WHERE id = ?").bind(pid).run();
+        const box = await updatePhotoList(DB, row.box, (list) => list.filter((p) => p !== pid));
+        return json({ id: row.box, pid, deleted: true, box });
+      }
     }
 
     if (parts[0] === "boxes" && parts.length === 2) {
@@ -153,6 +240,11 @@ export async function handleApi(request, env, parts) {
         const body = await readBody(request);
         if (!body) return fail(400, "Send JSON.");
         const f = cleanBoxFields(body);
+        // Until loading opens, a box can't be moved forward past Packed (moving back is fine).
+        const at = loadFrom(env);
+        if (f.status && Date.now() < at && STEPS.indexOf(f.status) > PACKED && STEPS.indexOf(f.status) > STEPS.indexOf(statusOf(cur.data))) {
+          return json({ error: `Loading opens ${loadingText(at)}. Until then boxes can only go as far as Packed.`, locked: true, loadFrom: at }, 409);
+        }
         const next = { ...cur.data, ...f };
         if (f.status) next.statusAt = new Date().toISOString();
         if (body.resetScan === true) next.scannedAt = null;
@@ -161,6 +253,8 @@ export async function handleApi(request, env, parts) {
       }
       if (method === "DELETE") {
         await DB.prepare("DELETE FROM docs WHERE col = 'boxes' AND id = ?").bind(id).run();
+        await ensurePhotos(DB);
+        await DB.prepare("DELETE FROM photos WHERE box = ?").bind(id).run();
         return json({ id, deleted: true });
       }
     }
@@ -177,6 +271,8 @@ export async function handleApi(request, env, parts) {
         const i = STEPS.indexOf(from);
         if (i >= STEPS.length - 1) return json({ id, box: b, from, to: from, result: "done" });
         const to = STEPS[i + 1];
+        const at = loadFrom(env);
+        if (i + 1 > PACKED && now < at) return json({ id, box: b, from, to: from, result: "held", loadFrom: at, opens: loadingText(at) });
         const next = { ...b, status: to, statusAt: new Date(now).toISOString(), scannedAt: new Date(now).toISOString() };
         const res = await DB.prepare("UPDATE docs SET data = ?, updated_at = ? WHERE col = 'boxes' AND id = ? AND updated_at = ?")
           .bind(JSON.stringify(next), now, id, cur.at).run();

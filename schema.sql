@@ -12,5 +12,15 @@ CREATE TABLE IF NOT EXISTS counters (
   v INTEGER NOT NULL
 );
 
+-- Photos of what's in each box. The API also makes this table the first time it needs it.
+CREATE TABLE IF NOT EXISTS photos (
+  id         TEXT    PRIMARY KEY,
+  box        TEXT    NOT NULL,
+  mime       TEXT    NOT NULL,
+  data       BLOB    NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS photos_box ON photos (box);
+
 INSERT OR IGNORE INTO counters (k, v) VALUES ('box', 0);
 INSERT OR IGNORE INTO counters (k, v) VALUES ('test', 0);

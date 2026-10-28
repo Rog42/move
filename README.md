@@ -13,6 +13,10 @@ It runs as a single Cloudflare Worker: static files from `public/`, the API in `
 
 Each scan moves a box one step: **labelled → packed → loaded → in room → unpacked**. The last scan is for when it's been emptied, or for furniture once it's set up. A second scan of the same box within 15 seconds is ignored. That means a box with labels on several sides can be turned over and scanned again without skipping a step.
 
+**Nothing is loaded before the truck: Fri 6 Nov 2026, 5pm.** Until then, scanning a packed box leaves it packed and opens its card instead: the room, what's in it, a box to add or change the contents, and **Take photo**. The stage buttons stop at Packed too, and the server refuses anything further, so it can't be got round from another phone. The time is `LOAD_FROM` in `wrangler.toml`; the code defaults to 5pm on the Friday.
+
+**Photos of what's in a box:** Take photo on a box's card (or on the scanner after a scan) opens the phone's camera. The app shrinks each photo to 1600 px before sending it, and keeps up to 20 per box. Photos are stored in the D1 database, in a `photos` table the API creates the first time it needs it, and deleting a box deletes its photos. Like the box list, anyone with the site address can see them.
+
 ## Deploy (one-off)
 
 The D1 database `move` already exists in the Cloudflare account and is loaded with the checklists, the rooms and box 001. Its id is in `wrangler.toml`.
@@ -67,12 +71,14 @@ npx wrangler d1 execute move --local --file=seed.sql
 | --- | --- | --- |
 | GET | `/api/state` | Rooms and boxes |
 | POST | `/api/boxes` | `{cat, dest}`. The number comes from an atomic counter in D1, so two phones never get the same one |
-| PATCH | `/api/boxes/:id` | `{cat?, dest?, status?, resetScan?}` |
+| PATCH | `/api/boxes/:id` | `{cat?, dest?, status?, resetScan?}`. Before loading opens, a status past Packed is refused with 409 |
 | DELETE | `/api/boxes/:id` | The number is never reused |
 | POST | `/api/boxes/batch` | `{items: [{cat, dest}], test?}`. Up to 100 labels, consecutive numbers |
 | POST | `/api/boxes/printed` | `{ids, printed?}`. Marks labels printed; unprinted ones make up the To print list |
 | DELETE | `/api/boxes?test=1` | Deletes every test label (T001…) and restarts test numbering |
-| POST | `/api/scan/:id` | Moves the box one step. Returns `moved`, `recent` (within 15 s) or `done` |
+| POST | `/api/scan/:id` | Moves the box one step. Returns `moved`, `recent` (within 15 s), `held` (packed, before loading opens) or `done` |
+| POST | `/api/boxes/:id/photos` | Body is the image (JPEG, PNG or WebP, up to 1.5 MB). Returns `{pid, box}` |
+| GET, DELETE | `/api/photos/:pid` | The photo itself, or remove it from its box |
 | GET | `/api/lists/state` | Checklist items and settings (Access only) |
 | POST, PUT, PATCH, DELETE | `/api/lists/doc/:col[/:id]` | `col` is `items` or `meta`. PATCH deep-merges (Access only) |
 
