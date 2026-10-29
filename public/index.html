@@ -120,6 +120,18 @@ input[type="text"], input[inputmode], select { width: 100%; min-width: 0; paddin
 .chip { border: 1px solid var(--line); background: var(--surface); border-radius: 99px; padding: 5px 12px; font-size: 13px; font-weight: 500; color: var(--muted); }
 .chip[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
 .groups { display: flex; flex-direction: column; gap: 16px; }
+/* Room groups fold away. Folded, the header still lists the box numbers, so a box can be found at a glance. */
+.groups.is-foldable { gap: 8px; }
+.g-fold { width: 100%; display: grid; grid-template-columns: auto 1fr auto auto; gap: 3px 10px; align-items: center; text-align: left; padding: 11px 12px; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); color: var(--ink); }
+.g-fold .sw { width: 13px; height: 13px; }
+.g-fold h3 { font-size: 15px; font-weight: 700; margin: 0; }
+.g-fold .g-count { font-family: var(--f-mono); font-size: 12px; color: var(--muted); white-space: nowrap; }
+.g-fold .g-nums { grid-column: 2 / -1; font-family: var(--f-mono); font-size: 13px; color: var(--muted); overflow-wrap: anywhere; line-height: 1.5; }
+.g-fold .chev { width: 8px; height: 8px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(45deg); margin: 0 4px 3px 2px; transition: transform .15s ease; }
+.grp.is-open .g-fold { border-radius: var(--r) var(--r) 0 0; border-bottom-color: transparent; }
+.grp.is-open .g-fold .chev { transform: rotate(-135deg); margin-bottom: -3px; }
+.grp.is-open ul.boxes { border-radius: 0 0 var(--r) var(--r); border-top: 0; }
+.grp.is-open .g-fold + ul.boxes .box:first-child { border-top: 1px solid var(--line); }
 .g-head { display: flex; align-items: baseline; gap: 8px; padding-inline: 2px; margin-bottom: 6px; }
 .g-head h3 { font-size: 14px; font-weight: 700; }
 .g-head span { margin-left: auto; font-family: var(--f-mono); font-size: 12px; color: var(--muted); }
@@ -301,7 +313,7 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
   </section>
 
   <section aria-labelledby="allH" style="display:flex;flex-direction:column;gap:12px">
-    <div class="row" style="justify-content:space-between"><h2 id="allH" style="font-size:16px">All boxes</h2></div>
+    <div class="row" style="justify-content:space-between"><h2 id="allH" style="font-size:16px">All boxes</h2><button class="linkbtn" type="button" id="foldAll" hidden>Open all rooms</button></div>
     <div class="filters" id="filters" role="group" aria-label="Show boxes"></div>
     <div id="register"><div class="empty"><b>Loading boxes</b></div></div>
   </section>
@@ -464,12 +476,36 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     const groups = savoyRooms().map((r) => ({ r, rows: shown.filter((b) => b.dest === r.id) })).filter((g) => g.rows.length);
     const loose = shown.filter((b) => !b.dest || !rooms[b.dest]);
     if (loose.length) groups.push({ r: null, rows: loose });
-    $("#register").innerHTML = `<div class="groups">${groups.map((g) => {
+    // With a filter on, every group it finds is open. Otherwise groups fold, and the room of the
+    // box just scanned opens by itself.
+    const forced = filter !== "all";
+    const hotKey = hot && boxes[hot] && !boxes[hot].test ? groupKey(boxes[hot]) : null;
+    const isOpen = (key) => forced || openRooms.has(key) || key === hotKey;
+    $("#register").innerHTML = `<div class="groups ${forced ? "" : "is-foldable"}">${groups.map((g) => {
+      const key = g.r ? g.r.id : "_none", open = isOpen(key);
       const inr = g.rows.filter((b) => statusOf(b) === "inroom" || statusOf(b) === "unpacked").length;
-      return `<section><div class="g-head"><i class="sw" style="--sw:${g.r ? hexOf(g.r.colour) || "transparent" : "transparent"}"></i><h3>${g.r ? esc(g.r.name) : "No room yet"}</h3><span>${plural(g.rows.length, "box", "boxes")} · ${inr} in room</span></div>
-        <ul class="boxes">${g.rows.map(rowHTML).join("")}</ul></section>`;
+      const sw = g.r ? hexOf(g.r.colour) || "transparent" : "transparent", name = g.r ? esc(g.r.name) : "No room yet";
+      const count = `${plural(g.rows.length, "box", "boxes")} · ${inr} in room`;
+      if (forced) return `<section><div class="g-head"><i class="sw" style="--sw:${sw}"></i><h3>${name}</h3><span>${count}</span></div><ul class="boxes">${g.rows.map(rowHTML).join("")}</ul></section>`;
+      return `<section class="grp ${open ? "is-open" : ""}"><button class="g-fold" type="button" data-fold="${key}" aria-expanded="${open}">
+          <i class="sw" style="--sw:${sw}"></i><h3>${name}</h3><span class="g-count">${count}</span><i class="chev" aria-hidden="true"></i>
+          ${open ? "" : `<span class="g-nums">${g.rows.map(tag).join("  ")}</span>`}</button>
+        ${open ? `<ul class="boxes">${g.rows.map(rowHTML).join("")}</ul>` : ""}</section>`;
     }).join("")}${testHTML}</div>`;
+    const keys = groups.map((g) => (g.r ? g.r.id : "_none"));
+    $("#foldAll").hidden = forced || keys.length < 2;
+    $("#foldAll").textContent = keys.some((k) => !isOpen(k)) ? "Open all rooms" : "Close all rooms";
+    $("#foldAll").dataset.keys = keys.join(",");
   }
+  $("#foldAll").addEventListener("click", (e) => {
+    const keys = (e.currentTarget.dataset.keys || "").split(",").filter(Boolean);
+    if (e.currentTarget.textContent.startsWith("Open")) keys.forEach((k) => openRooms.add(k)); else { openRooms.clear(); hot = null; }
+    saveOpen(); renderRegister();
+  });
+  let openRooms = new Set();
+  try { openRooms = new Set(JSON.parse(localStorage.getItem("openRooms") || "[]")); } catch (e) {}
+  const saveOpen = () => { try { localStorage.setItem("openRooms", JSON.stringify([...openRooms])); } catch (e) {} };
+  const groupKey = (b) => (b && b.dest && rooms[b.dest] ? b.dest : "_none");
   let delTestsArmed = false, delTestsT;
   $("#register").addEventListener("click", async (e) => {
     if (!e.target.closest("#delTests")) return;
@@ -1018,7 +1054,15 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     renderSheetPhotos(); render();
   });
   function closeSheet() { const d = $("#sheet"); if (d.close) d.close(); else d.removeAttribute("open"); sheetId = null; }
-  $("#register").addEventListener("click", (e) => { const b = e.target.closest("[data-box]"); if (b) openSheet(b.dataset.box); });
+  $("#register").addEventListener("click", (e) => {
+    const f = e.target.closest("[data-fold]");
+    if (f) {
+      const k = f.dataset.fold, open = f.getAttribute("aria-expanded") === "true";
+      if (open) { openRooms.delete(k); if (hot && boxes[hot] && groupKey(boxes[hot]) === k) hot = null; } else openRooms.add(k);
+      saveOpen(); renderRegister(); return;
+    }
+    const b = e.target.closest("[data-box]"); if (b) openSheet(b.dataset.box);
+  });
   $("#sheetClose").addEventListener("click", closeSheet);
   $("#sheetSeg").addEventListener("click", async (e) => {
     const btn = e.target.closest("[data-step]"); if (!btn || !sheetId) return;
