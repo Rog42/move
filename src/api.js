@@ -35,6 +35,8 @@ const PHOTO_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const PHOTO_ID_RE = /^p[0-9a-f]{32}$/;
 // Label settings shared by every phone, so the same printer gets the same layout whoever prints.
 const LABEL_SIZES = new Set(["100x150", "a4", "48x30", "50x30", "40x30", "50x20"]);
+// Every device gets a complete set, so nothing falls back to one phone's own old value.
+const PRINT_DEFAULTS = { size: "a4", copies: 2, top: 0, bottom: 10 };
 function cleanPrintSettings(body) {
   const out = {};
   if (typeof body.size === "string" && LABEL_SIZES.has(body.size)) out.size = body.size;
@@ -145,7 +147,7 @@ export async function handleApi(request, env, parts) {
     // ---------- Boxes (public) ----------
     if (parts[0] === "state" && parts.length === 1 && method === "GET") {
       const [rooms, boxes, print] = await Promise.all([collection(DB, "rooms"), collection(DB, "boxes"), getDoc(DB, "settings", "print")]);
-      return json({ rooms, boxes, settings: { print: print ? print.data : {} }, now: Date.now(), loadFrom: loadFrom(env) });
+      return json({ rooms, boxes, settings: { print: { ...PRINT_DEFAULTS, ...(print ? print.data : {}) } }, now: Date.now(), loadFrom: loadFrom(env) });
     }
 
     if (parts[0] === "settings" && parts[1] === "print" && parts.length === 2 && method === "PUT") {
@@ -153,10 +155,12 @@ export async function handleApi(request, env, parts) {
       if (!body) return fail(400, "Send JSON.");
       const f = cleanPrintSettings(body);
       if (!Object.keys(f).length) return fail(400, "Nothing to change.");
-      const cur = await getDoc(DB, "settings", "print");
-      const next = { ...(cur ? cur.data : {}), ...f, updatedAt: new Date().toISOString() };
-      await putDoc(DB, "settings", "print", next);
-      return json({ print: next });
+      // Merge the change in one statement (json_patch), so two changes landing together both stick.
+      f.updatedAt = new Date().toISOString();
+      const row = await DB.prepare(
+        "INSERT INTO docs (col, id, data, updated_at) VALUES ('settings', 'print', ?1, ?2) ON CONFLICT (col, id) DO UPDATE SET data = json_patch(docs.data, excluded.data), updated_at = excluded.updated_at RETURNING data"
+      ).bind(JSON.stringify(f), Date.now()).first();
+      return json({ print: { ...PRINT_DEFAULTS, ...JSON.parse(row.data) } });
     }
 
     if (parts[0] === "boxes" && parts.length === 1 && method === "POST") {
