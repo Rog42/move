@@ -284,6 +284,7 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
           <label>Top row <input type="number" id="adjTop" step="1" min="-20" max="20" inputmode="numeric"></label>
           <label>Bottom row <input type="number" id="adjBottom" step="1" min="-20" max="20" inputmode="numeric"></label>
         </div>
+        <p class="hint">Label size, sides and sheet alignment are shared, so every phone prints the same way.</p>
         <div class="row">
           <button class="btn" type="button" id="lbPrint" disabled>Print</button>
           <button class="btn" type="button" id="lbShare" disabled>Share</button>
@@ -391,9 +392,9 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
   const hasContents = (b) => !!(b && (b.cat || photosOf(b).length));
   const whatText = (b) => (b.cat ? b.cat : photosOf(b).length ? plural(photosOf(b).length, "photo", "photos") : "");
   let current = null, filter = "all", hot = null, log = [], sheetId = null;
-  let size = "100x150";
+  let size = "a4"; // the Brother laser with Avery L7169 sheets
   try { size = localStorage.getItem("labelSize") || size; } catch (e) {}
-  if (!SIZES[size]) size = "100x150";
+  if (!SIZES[size]) size = "a4";
   const MAX_COPIES = 6;
   let copies = 2;
   try { copies = Math.min(MAX_COPIES, Math.max(1, num(localStorage.getItem("labelCopies")) || 2)); } catch (e) {}
@@ -432,6 +433,7 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
       const s = await api("/api/state");
       rooms = s.rooms || {}; boxes = s.boxes || {}; loaded = true;
       if (num(s.loadFrom)) loadAt = num(s.loadFrom);
+      applyPrintSettings(s.settings && s.settings.print);
       render();
     } catch (e) { if (!loaded) $("#register").innerHTML = `<div class="empty"><b>Can't reach the box list</b>${esc(e.message)}</div>`; }
   }
@@ -737,15 +739,35 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
       $("#queueCard").scrollIntoView({ behavior: "smooth", block: "center" });
     } catch (e) { toast("Couldn't create them: " + e.message); renderMany(); }
   });
+  // ---------- Label settings, shared by every phone ----------
+  // The server keeps one set (size, sides, A4 alignment) so Lu's phone and Rog's print the same way.
+  // Each phone also keeps a copy, used until the shared one loads.
+  let printEditedAt = 0;
+  function keepLocal() {
+    try { localStorage.setItem("labelSize", size); localStorage.setItem("labelCopies", String(copies)); localStorage.setItem("sheetAdj", JSON.stringify(sheetAdj)); } catch (e) {}
+  }
+  function applyPrintSettings(p) {
+    if (!p || Date.now() - printEditedAt < 8000) return; // a change made here is still on its way to the server
+    if (typeof p.size === "string" && SIZES[p.size] && document.activeElement !== $("#lbSize")) { size = p.size; $("#lbSize").value = size; }
+    if (Number.isInteger(p.copies) && p.copies >= 1 && p.copies <= MAX_COPIES) copies = p.copies;
+    const editing = document.activeElement === $("#adjTop") || document.activeElement === $("#adjBottom");
+    if (Number.isFinite(p.top) && Number.isFinite(p.bottom) && !editing) sheetAdj = { top: p.top, bottom: p.bottom };
+    keepLocal();
+  }
+  function sharePrint(patch) {
+    printEditedAt = Date.now(); keepLocal();
+    api("/api/settings/print", { method: "PUT", body: JSON.stringify(patch) })
+      .catch(() => toast("Couldn't share that setting with the other phones. It's saved on this one."));
+  }
   function setCopies(n) {
     copies = Math.min(MAX_COPIES, Math.max(1, n));
-    try { localStorage.setItem("labelCopies", String(copies)); } catch (e) {}
+    sharePrint({ copies });
     drawPreview(); renderQueue();
   }
   function setAdj() {
     const clamp = (v, d) => { const n = Number(v); return Number.isFinite(n) ? Math.max(-20, Math.min(20, Math.round(n * 2) / 2)) : d; };
     sheetAdj = { top: clamp($("#adjTop").value, sheetAdj.top), bottom: clamp($("#adjBottom").value, sheetAdj.bottom) };
-    try { localStorage.setItem("sheetAdj", JSON.stringify(sheetAdj)); } catch (e) {}
+    sharePrint({ top: sheetAdj.top, bottom: sheetAdj.bottom });
   }
   $("#adjTop").addEventListener("change", setAdj);
   $("#adjBottom").addEventListener("change", setAdj);
@@ -774,7 +796,7 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
   $("#lbTest").addEventListener("change", () => { current = null; render(); });
   $("#lbDest").addEventListener("change", () => { current = null; drawPreview(); });
   $("#lbSize").value = size;
-  $("#lbSize").addEventListener("change", (e) => { size = e.target.value; try { localStorage.setItem("labelSize", size); } catch (err) {} drawPreview(); });
+  $("#lbSize").addEventListener("change", (e) => { size = e.target.value; sharePrint({ size }); drawPreview(); renderQueue(); });
   $("#lbCreate").addEventListener("click", async () => {
     const cat = $("#lbCat").value.trim(), dest = $("#lbDest").value || null;
     const btn = $("#lbCreate"); btn.disabled = true;

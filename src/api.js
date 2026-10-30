@@ -10,6 +10,7 @@
 //   DELETE /api/boxes?test=1          remove every test label (T001...) and restart test numbering
 //   POST   /api/scan/:id              move a box one step: labelled > packed > loaded > inroom > unpacked
 //                                     Before loading opens (LOAD_FROM), a packed box stays packed: result "held"
+//   PUT    /api/settings/print        shared label settings {size?, copies?, top?, bottom?}, used by every phone
 //   POST   /api/boxes/:id/photos      add a photo of what's in a box (raw JPEG, PNG or WebP body)
 //   GET    /api/photos/:pid           the photo itself
 //   DELETE /api/photos/:pid           remove a photo
@@ -32,6 +33,19 @@ const PHOTO_MAX_BYTES = 1500000; // D1 holds up to 2 MB in one value; the app se
 const PHOTO_MAX_PER_BOX = 20;
 const PHOTO_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const PHOTO_ID_RE = /^p[0-9a-f]{32}$/;
+// Label settings shared by every phone, so the same printer gets the same layout whoever prints.
+const LABEL_SIZES = new Set(["100x150", "a4", "48x30", "50x30", "40x30", "50x20"]);
+function cleanPrintSettings(body) {
+  const out = {};
+  if (typeof body.size === "string" && LABEL_SIZES.has(body.size)) out.size = body.size;
+  const c = Number(body.copies);
+  if (Number.isInteger(c) && c >= 1 && c <= 6) out.copies = c;
+  for (const k of ["top", "bottom"]) {
+    const v = Number(body[k]);
+    if (body[k] !== undefined && body[k] !== null && Number.isFinite(v)) out[k] = Math.max(-20, Math.min(20, Math.round(v * 2) / 2));
+  }
+  return out;
+}
 const LIST_COLS = new Set(["items", "meta"]);
 const ID_RE = /^[A-Za-z0-9_\-.~:@+]{1,120}$/;
 
@@ -130,8 +144,19 @@ export async function handleApi(request, env, parts) {
   try {
     // ---------- Boxes (public) ----------
     if (parts[0] === "state" && parts.length === 1 && method === "GET") {
-      const [rooms, boxes] = await Promise.all([collection(DB, "rooms"), collection(DB, "boxes")]);
-      return json({ rooms, boxes, now: Date.now(), loadFrom: loadFrom(env) });
+      const [rooms, boxes, print] = await Promise.all([collection(DB, "rooms"), collection(DB, "boxes"), getDoc(DB, "settings", "print")]);
+      return json({ rooms, boxes, settings: { print: print ? print.data : {} }, now: Date.now(), loadFrom: loadFrom(env) });
+    }
+
+    if (parts[0] === "settings" && parts[1] === "print" && parts.length === 2 && method === "PUT") {
+      const body = await readBody(request);
+      if (!body) return fail(400, "Send JSON.");
+      const f = cleanPrintSettings(body);
+      if (!Object.keys(f).length) return fail(400, "Nothing to change.");
+      const cur = await getDoc(DB, "settings", "print");
+      const next = { ...(cur ? cur.data : {}), ...f, updatedAt: new Date().toISOString() };
+      await putDoc(DB, "settings", "print", next);
+      return json({ print: next });
     }
 
     if (parts[0] === "boxes" && parts.length === 1 && method === "POST") {

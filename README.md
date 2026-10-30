@@ -33,6 +33,8 @@ Until step 3 is done, `/api/lists/*` returns 403. The account and policy numbers
 
 ## Printing labels
 
+**Label settings are shared.** The label size, number of sides and the A4 sheet alignment are stored on the server, so every phone and computer prints the same way. Change one on any device and the others follow within a few seconds. New devices start on A4 sheets, 2 sides.
+
 **Making labels in bulk:** under Make several labels, add rows of room, what (optional) and how many, for example Kitchen × 4 or Desk → Studio × 1, then create them all at once with consecutive numbers. If you leave What blank, the label gets a line to write the contents on.
 
 **To print:** every new label waits there until it's printed. Each one has a tick box, so you can hold some back. On A4, **Full sheets only** prints just enough boxes to fill whole sheets and keeps the odd ones for next time, because half-used label sheets shouldn't go back through a laser. The list is shared, so labels made on a phone can be printed from the Mac. Print all uses the size and sides chosen in New box label. Once you confirm the labels printed OK, they come off the list. Printing a single box with its own Print button takes it off the list straight away.
@@ -69,7 +71,8 @@ npx wrangler d1 execute move --local --file=seed.sql
 
 | Method | Path | Notes |
 | --- | --- | --- |
-| GET | `/api/state` | Rooms and boxes |
+| GET | `/api/state` | Rooms, boxes and the shared label settings |
+| PUT | `/api/settings/print` | `{size?, copies?, top?, bottom?}`. Shared label settings for every device |
 | POST | `/api/boxes` | `{cat, dest}`. The number comes from an atomic counter in D1, so two phones never get the same one |
 | PATCH | `/api/boxes/:id` | `{cat?, dest?, status?, resetScan?}`. Before loading opens, a status past Packed is refused with 409 |
 | DELETE | `/api/boxes/:id` | The number is never reused |
