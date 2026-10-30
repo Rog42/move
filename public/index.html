@@ -191,6 +191,9 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
 .ph-del.is-armed { background: var(--late); }
 .ph-add { cursor: pointer; border: 1.5px dashed var(--accent); color: var(--accent); background: var(--accent-soft); }
 .cam-acts { display: flex; gap: 10px; }
+.reprint { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; border-top: 1px solid var(--line); padding-top: 12px; margin-top: 4px; }
+.reprint .fld { flex: 1 1 180px; }
+.reprint input { font-family: var(--f-mono); }
 .cam-acts .btn { flex: 1; }
 
 .toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(18px + env(safe-area-inset-bottom, 0px)); background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 10px; font-size: 14px; max-width: calc(100% - 32px); z-index: 60; }
@@ -284,6 +287,7 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
           <label>Top row <input type="number" id="adjTop" step="1" min="-20" max="20" inputmode="numeric"></label>
           <label>Bottom row <input type="number" id="adjBottom" step="1" min="-20" max="20" inputmode="numeric"></label>
         </div>
+        <p class="hint">Label size, sides and sheet alignment are shared, so every phone prints the same way.</p>
         <div class="row">
           <button class="btn" type="button" id="lbPrint" disabled>Print</button>
           <button class="btn" type="button" id="lbShare" disabled>Share</button>
@@ -298,7 +302,7 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     <p class="queue-text" id="queueText"></p>
     <ul class="qlist" id="qList" aria-label="Labels waiting to print"></ul>
     <div class="qsel"><button class="linkbtn" type="button" id="qAll">Tick all</button><button class="linkbtn" type="button" id="qNone">Untick all</button></div>
-    <div class="row">
+    <div class="row" id="queueBtns">
       <button class="btn btn-primary" type="button" id="queuePrint">Print ticked</button>
       <button class="btn" type="button" id="queueFull" hidden>Full sheets only</button>
       <button class="btn" type="button" id="queueSkip">Mark ticked as printed</button>
@@ -310,6 +314,10 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
         <button class="btn" type="button" id="queueNo">No, keep them</button>
       </div>
     </div>
+    <form class="reprint" id="reprintForm" autocomplete="off">
+      <label class="fld">Reprint labels <input type="text" id="reprintIn" placeholder="e.g. 12-17, 21" autocapitalize="characters" spellcheck="false"></label>
+      <button class="btn" type="submit">Add to To print</button>
+    </form>
   </section>
 
   <section aria-labelledby="allH" style="display:flex;flex-direction:column;gap:12px">
@@ -344,6 +352,7 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     <div class="row">
       <button class="btn btn-primary" type="button" id="shSave">Save changes</button>
       <button class="btn" type="button" id="shLabel">Show label</button>
+      <button class="btn" type="button" id="shReprint">Reprint</button>
       <button class="btn btn-danger" type="button" id="shRemove" style="margin-left:auto">Remove</button>
     </div>
   </div>
@@ -391,9 +400,9 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
   const hasContents = (b) => !!(b && (b.cat || photosOf(b).length));
   const whatText = (b) => (b.cat ? b.cat : photosOf(b).length ? plural(photosOf(b).length, "photo", "photos") : "");
   let current = null, filter = "all", hot = null, log = [], sheetId = null;
-  let size = "100x150";
+  let size = "a4"; // the Brother laser with Avery L7169 sheets
   try { size = localStorage.getItem("labelSize") || size; } catch (e) {}
-  if (!SIZES[size]) size = "100x150";
+  if (!SIZES[size]) size = "a4";
   const MAX_COPIES = 6;
   let copies = 2;
   try { copies = Math.min(MAX_COPIES, Math.max(1, num(localStorage.getItem("labelCopies")) || 2)); } catch (e) {}
@@ -432,6 +441,7 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
       const s = await api("/api/state");
       rooms = s.rooms || {}; boxes = s.boxes || {}; loaded = true;
       if (num(s.loadFrom)) loadAt = num(s.loadFrom);
+      applyPrintSettings(s.settings && s.settings.print);
       render();
     } catch (e) { if (!loaded) $("#register").innerHTML = `<div class="empty"><b>Can't reach the box list</b>${esc(e.message)}</div>`; }
   }
@@ -662,11 +672,12 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
   function renderQueue() {
     const { q, sel } = queueSel(), card = $("#queueCard");
     [...qOff].forEach((id) => { if (!q.some((b) => b.id === id)) qOff.delete(id); });
-    card.hidden = !q.length && !lastBatch.length;
+    card.hidden = !all_().length;
     if (card.hidden) return;
+    $("#qList").hidden = $("#queueBtns").hidden = !q.length;
     const sheet = size === "a4", labels = sel.length * copies, sizeName = $("#lbSize").selectedOptions[0] ? $("#lbSize").selectedOptions[0].textContent : size;
     const sheets = sheet ? Math.ceil(labels / 4) : 0, spare = sheets * 4 - labels;
-    $("#queueText").innerHTML = !q.length ? "Nothing waiting to print."
+    $("#queueText").innerHTML = !q.length ? "Nothing waiting to print. To print labels again, type their numbers below."
       : !sel.length ? `${plural(q.length, "box", "boxes")} waiting, none ticked.`
       : `${plural(q.length, "box", "boxes")} waiting${sel.length < q.length ? `, ${sel.length} ticked` : ""}. At ${esc(sizeName)} and ${plural(copies, "side", "sides")} that's ${plural(labels, "label", "labels")}${sheets ? ` on ${plural(sheets, "sheet", "sheets")}${spare ? `, with ${plural(spare, "spot", "spots")} left empty on the last one` : ""}` : ""}.`;
     $("#qList").innerHTML = q.map((b) => {
@@ -697,6 +708,39 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     skipArmed = false; clearTimeout(skipT);
     const ids = queueSel().sel.map((b) => b.id); lastBatch = [];
     await markPrinted(ids, true);
+  });
+
+  // ---------- Reprint: put printed labels back on the To print list ----------
+  // Accepts "12-17, 21", "T3", "12–17" (an en dash from autocorrect) and spaces or commas between.
+  function parseIds(text) {
+    const ids = [], bad = [];
+    String(text || "").replace(/[\u2013\u2014]/g, "-").split(/[\s,;]+/).filter(Boolean).forEach((raw) => {
+      const m = raw.match(/^(t)?0*(\d{1,4})(?:-(t)?0*(\d{1,4}))?$/i);
+      if (!m) { bad.push(raw); return; }
+      const t = !!m[1], a = Number(m[2]), b = m[4] ? Number(m[4]) : a;
+      if (b < a || b - a > 300) { bad.push(raw); return; }
+      for (let n = a; n <= b; n++) ids.push((t ? "t" : "b") + pad3(n));
+    });
+    return { ids: [...new Set(ids)], bad };
+  }
+  async function requeue(ids) {
+    const r = await api("/api/boxes/printed", { method: "POST", body: JSON.stringify({ ids, printed: false }) });
+    ids.forEach((id) => { if (boxes[id]) boxes[id].printedAt = null; qOff.delete(id); });
+    return r;
+  }
+  $("#reprintForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const { ids, bad } = parseIds($("#reprintIn").value);
+    const found = ids.filter((id) => boxes[id]), missing = ids.filter((id) => !boxes[id]);
+    if (bad.length) { toast(`Didn't understand "${bad[0]}". Use numbers and ranges, like 12-17, 21.`); return; }
+    if (!found.length) { toast(ids.length ? "None of those boxes are in the list." : "Type the box numbers to reprint, like 12-17, 21."); return; }
+    try {
+      await requeue(found);
+      $("#reprintIn").value = "";
+      const rows = found.map((id) => Object.assign({ id }, boxes[id])).sort((a, b) => (a.test ? 1 : 0) - (b.test ? 1 : 0) || num(a.n) - num(b.n));
+      toast(`${ranges(rows).join(", ")} back on To print.${missing.length ? ` Not found: ${missing.map((id) => tag({ n: Number(id.slice(1)), test: id[0] === "t" })).join(", ")}.` : ""}`);
+      render();
+    } catch (err) { toast("Couldn't add those to the print list. Check the signal and try again."); }
   });
 
   // ---------- Make several: a list of room + what + how many, created in one go ----------
@@ -737,15 +781,35 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
       $("#queueCard").scrollIntoView({ behavior: "smooth", block: "center" });
     } catch (e) { toast("Couldn't create them: " + e.message); renderMany(); }
   });
+  // ---------- Label settings, shared by every phone ----------
+  // The server keeps one set (size, sides, A4 alignment) so Lu's phone and Rog's print the same way.
+  // Each phone also keeps a copy, used until the shared one loads.
+  let printEditedAt = 0;
+  function keepLocal() {
+    try { localStorage.setItem("labelSize", size); localStorage.setItem("labelCopies", String(copies)); localStorage.setItem("sheetAdj", JSON.stringify(sheetAdj)); } catch (e) {}
+  }
+  function applyPrintSettings(p) {
+    if (!p || Date.now() - printEditedAt < 8000) return; // a change made here is still on its way to the server
+    if (typeof p.size === "string" && SIZES[p.size] && document.activeElement !== $("#lbSize")) { size = p.size; $("#lbSize").value = size; }
+    if (Number.isInteger(p.copies) && p.copies >= 1 && p.copies <= MAX_COPIES) copies = p.copies;
+    const editing = document.activeElement === $("#adjTop") || document.activeElement === $("#adjBottom");
+    if (Number.isFinite(p.top) && Number.isFinite(p.bottom) && !editing) sheetAdj = { top: p.top, bottom: p.bottom };
+    keepLocal();
+  }
+  function sharePrint(patch) {
+    printEditedAt = Date.now(); keepLocal();
+    api("/api/settings/print", { method: "PUT", body: JSON.stringify(patch) })
+      .catch(() => toast("Couldn't share that setting with the other phones. It's saved on this one."));
+  }
   function setCopies(n) {
     copies = Math.min(MAX_COPIES, Math.max(1, n));
-    try { localStorage.setItem("labelCopies", String(copies)); } catch (e) {}
+    sharePrint({ copies });
     drawPreview(); renderQueue();
   }
   function setAdj() {
     const clamp = (v, d) => { const n = Number(v); return Number.isFinite(n) ? Math.max(-20, Math.min(20, Math.round(n * 2) / 2)) : d; };
     sheetAdj = { top: clamp($("#adjTop").value, sheetAdj.top), bottom: clamp($("#adjBottom").value, sheetAdj.bottom) };
-    try { localStorage.setItem("sheetAdj", JSON.stringify(sheetAdj)); } catch (e) {}
+    sharePrint({ top: sheetAdj.top, bottom: sheetAdj.bottom });
   }
   $("#adjTop").addEventListener("change", setAdj);
   $("#adjBottom").addEventListener("change", setAdj);
@@ -774,7 +838,7 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
   $("#lbTest").addEventListener("change", () => { current = null; render(); });
   $("#lbDest").addEventListener("change", () => { current = null; drawPreview(); });
   $("#lbSize").value = size;
-  $("#lbSize").addEventListener("change", (e) => { size = e.target.value; try { localStorage.setItem("labelSize", size); } catch (err) {} drawPreview(); });
+  $("#lbSize").addEventListener("change", (e) => { size = e.target.value; sharePrint({ size }); drawPreview(); renderQueue(); });
   $("#lbCreate").addEventListener("click", async () => {
     const cat = $("#lbCat").value.trim(), dest = $("#lbDest").value || null;
     const btn = $("#lbCreate"); btn.disabled = true;
@@ -999,6 +1063,7 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     delPhotoArmed = null; renderSheetPhotos();
     $("#shDest").innerHTML = `<option value="">No room yet</option>` + savoyRooms().map((r) => `<option value="${esc(r.id)}" ${r.id === b.dest ? "selected" : ""}>${esc(r.name)}</option>`).join("");
     removeArmed = false; $("#shRemove").textContent = "Remove";
+    $("#shReprint").hidden = !b.printedAt; // not printed yet: it's already waiting in To print
     const focus = ask || !!(opts && opts.focus);
     $("#shCat").toggleAttribute("autofocus", focus);
     const d = $("#sheet"); if (d.showModal) d.showModal(); else d.setAttribute("open", "");
@@ -1076,6 +1141,12 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     catch (err) { toast("Couldn't save that change."); }
   });
   $("#shCat").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("#shSave").click(); } });
+  $("#shReprint").addEventListener("click", async () => {
+    if (!sheetId) return;
+    const id = sheetId;
+    try { await requeue([id]); toast(`${tag(boxes[id])} is back on To print.`); closeSheet(); render(); $("#queueCard").scrollIntoView({ behavior: "smooth", block: "center" }); }
+    catch (err) { toast("Couldn't add it to the print list."); }
+  });
   $("#shLabel").addEventListener("click", () => { if (!sheetId) return; current = sheetId; hot = sheetId; closeSheet(); render(); $("#lbCanvas").scrollIntoView({ behavior: "smooth", block: "center" }); });
   $("#shRemove").addEventListener("click", async () => {
     if (!sheetId) return;
