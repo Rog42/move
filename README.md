@@ -35,7 +35,7 @@ Until step 3 is done, `/api/lists/*` returns 403. The account and policy numbers
 
 **Label settings are shared.** The label size, number of sides and the A4 sheet alignment are stored on the server, so every phone and computer prints the same way. Change one on any device and the others follow within a few seconds. New devices start on A4 sheets, 2 sides.
 
-**Making labels in bulk:** under Make several labels, add rows of room, what (optional) and how many, for example Kitchen × 4 or Desk → Studio × 1, then create them all at once with consecutive numbers. If you leave What blank, the label gets a line to write the contents on.
+**Making labels in bulk:** tap **Make several labels** (folded away below New box label) to open it, add rows of room, what (optional) and how many, for example Kitchen × 4 or Desk → Studio × 1, then create them all at once with consecutive numbers. If you leave What blank, the label gets a line to write the contents on.
 
 **Reprinting:** type box numbers or ranges into **Reprint labels** at the bottom of To print (for example `12-17, 21`, or `T3` for a test label). They go back on the list and print like new ones. A box's card also has a **Reprint** button once its label has been printed.
 
