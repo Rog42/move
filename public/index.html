@@ -937,8 +937,10 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
   async function scan(id, how) {
     const b = boxes[id];
     try {
-      const r = await api("/api/scan/" + encodeURIComponent(id), { method: "POST" });
+      // A QR scan (camera or label link) tells the server the label exists, so it leaves To print.
+      const r = await api("/api/scan/" + encodeURIComponent(id) + (how === "number" ? "" : "?via=qr"), { method: "POST" });
       boxes[id] = r.box; hot = id;
+      if (r.printed) qOff.delete(id);
       let note, kind;
       if (r.result === "moved") { note = STEP_NAME[r.to]; kind = "moved"; log.unshift({ id, t: tag(r.box), cat: r.box.cat, note, from: r.from, undo: true }); }
       else if (r.result === "recent") { note = `already scanned, still ${STEP_NAME[r.to].toLowerCase()}`; kind = "warn"; }
@@ -947,7 +949,7 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
       if (kind !== "moved") log.unshift({ id, t: tag(r.box), cat: r.box.cat, note, undo: false });
       log = log.slice(0, 20);
       render();
-      return { kind, text: `${tag(r.box)} ${r.box.cat || ""} → ${note}` };
+      return { kind, text: `${tag(r.box)} ${r.box.cat || ""} → ${note}${r.printed ? " · off To print" : ""}` };
     } catch (e) {
       if (e.status === 404) return { kind: "bad", text: `Box ${id.replace(/^b/, "")} isn't in the list` };
       return { kind: "bad", text: "Couldn't save that scan. Check the signal and try again." };
