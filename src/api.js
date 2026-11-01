@@ -93,6 +93,17 @@ function loadFrom(env) {
   const t = Date.parse((env && env.LOAD_FROM) || "");
   return Number.isFinite(t) ? t : Date.parse(LOAD_FROM_DEFAULT);
 }
+// A room can open earlier (or later) than the rest: set loadFrom on its room document in D1,
+// e.g. rooms/s-craft {"loadFrom": "2026-11-06T09:00:00+11:00"}. Boxes follow the room they're going to.
+async function boxLoadFrom(DB, env, box) {
+  const dest = box && box.dest;
+  if (typeof dest === "string" && ID_RE.test(dest)) {
+    const room = await getDoc(DB, "rooms", dest);
+    const t = Date.parse((room && room.data && room.data.loadFrom) || "");
+    if (Number.isFinite(t)) return t;
+  }
+  return loadFrom(env);
+}
 function loadingText(at) {
   const d = new Date(at);
   const day = d.toLocaleDateString("en-AU", { timeZone: "Australia/Sydney", weekday: "short", day: "numeric", month: "short" });
@@ -281,10 +292,10 @@ export async function handleApi(request, env, parts) {
         for (let attempt = 0, doc = cur; attempt < RETRIES; attempt++) {
           if (attempt) { await backoff(attempt); doc = await getDoc(DB, "boxes", id); }
           if (!doc) return fail(404, "No such box.");
-          // Until loading opens, a box can't be moved forward past Packed (moving back is fine).
-          const at = loadFrom(env);
-          if (f.status && Date.now() < at && STEPS.indexOf(f.status) > PACKED && STEPS.indexOf(f.status) > STEPS.indexOf(statusOf(doc.data))) {
-            return json({ error: `Loading opens ${loadingText(at)}. Until then boxes can only go as far as Packed.`, locked: true, loadFrom: at }, 409);
+          // Until loading opens for its room, a box can't be moved forward past Packed (moving back is fine).
+          if (f.status && STEPS.indexOf(f.status) > PACKED && STEPS.indexOf(f.status) > STEPS.indexOf(statusOf(doc.data))) {
+            const at = await boxLoadFrom(DB, env, { ...doc.data, ...f });
+            if (Date.now() < at) return json({ error: `Loading opens ${loadingText(at)}. Until then boxes can only go as far as Packed.`, locked: true, loadFrom: at }, 409);
           }
           const next = { ...doc.data, ...f };
           if (f.status) next.statusAt = new Date().toISOString();
@@ -315,8 +326,10 @@ export async function handleApi(request, env, parts) {
         const i = STEPS.indexOf(from);
         if (i >= STEPS.length - 1) return json({ id, box: b, from, to: from, result: "done" });
         const to = STEPS[i + 1];
-        const at = loadFrom(env);
-        if (i + 1 > PACKED && now < at) return json({ id, box: b, from, to: from, result: "held", loadFrom: at, opens: loadingText(at) });
+        if (i + 1 > PACKED) {
+          const at = await boxLoadFrom(DB, env, b);
+          if (now < at) return json({ id, box: b, from, to: from, result: "held", loadFrom: at, opens: loadingText(at) });
+        }
         const next = { ...b, status: to, statusAt: new Date(now).toISOString(), scannedAt: new Date(now).toISOString() };
         const res = await DB.prepare("UPDATE docs SET data = ?, updated_at = ? WHERE col = 'boxes' AND id = ? AND updated_at = ?")
           .bind(JSON.stringify(next), now, id, cur.at).run();
