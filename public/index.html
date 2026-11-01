@@ -92,6 +92,16 @@ input[type="text"], input[inputmode], select { width: 100%; min-width: 0; paddin
 @media (max-width: 600px) { .many-form { grid-template-columns: 1fr 1fr; } }
 .many-form .copies { height: 44px; }
 .many-form #mAdd { height: 44px; }
+/* Make several labels folds into one line; most labels are made one at a time */
+details.fold { display: block; padding: 0; }
+details.fold > summary { list-style: none; display: flex; align-items: center; gap: 12px; padding: 14px 16px; cursor: pointer; border-radius: 14px; }
+details.fold > summary::-webkit-details-marker { display: none; }
+.fold-t { display: flex; flex-direction: column; margin-right: auto; line-height: 1.3; }
+.fold-t b { font-size: 16px; }
+.fold-t span { font-size: 13px; color: var(--muted); }
+details.fold .chev { width: 9px; height: 9px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(45deg); margin: 0 4px 4px 0; transition: transform .15s ease; flex: none; }
+details.fold[open] .chev { transform: rotate(-135deg); margin-bottom: -4px; }
+.fold-body { display: flex; flex-direction: column; gap: 12px; padding: 0 16px 16px; }
 .mlist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .mlist li { display: flex; gap: 10px; align-items: center; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); font-size: 14px; }
 .mlist li b { font-family: var(--f-mono); font-weight: 500; min-width: 2.4em; }
@@ -230,26 +240,6 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     <ul class="log" id="log" aria-live="polite"></ul>
   </section>
 
-  <section class="card" aria-labelledby="manyH">
-    <h2 id="manyH">Make several labels</h2>
-    <p class="hint">Build a list, such as 4 boxes for the kitchen or a desk and a cot for the guest room, then create them all at once. Leave "What" blank to write the contents on later.</p>
-    <div class="many-form">
-      <label class="fld">Room <select id="mRoom"></select></label>
-      <label class="fld">What (optional) <input type="text" id="mWhat" list="catList" maxlength="40" placeholder="e.g. Desk, Guitar case" autocomplete="off"></label>
-      <div class="fld">How many
-        <div class="copies" role="group" aria-label="How many labels">
-          <button type="button" id="mMinus" aria-label="Fewer">−</button>
-          <output id="mN" aria-live="polite">4</output>
-          <button type="button" id="mPlus" aria-label="More">+</button>
-        </div>
-      </div>
-      <button class="btn" type="button" id="mAdd">Add to list</button>
-    </div>
-    <ul class="mlist" id="mList"></ul>
-    <label class="testtick"><input type="checkbox" id="mTest"> Make these test labels (T001…)</label>
-    <button class="btn btn-primary btn-big" type="button" id="mCreate" disabled>Create labels</button>
-  </section>
-
   <section class="card" aria-labelledby="makeH">
     <h2 id="makeH">New box label</h2>
     <div class="maker-grid">
@@ -296,6 +286,28 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
       </figure>
     </div>
   </section>
+
+  <details class="card fold" id="manyCard">
+    <summary><span class="fold-t"><b>Make several labels</b><span id="manySub">A room's worth at once, like 4 boxes for the kitchen</span></span><i class="chev" aria-hidden="true"></i></summary>
+    <div class="fold-body">
+      <p class="hint">Build a list, such as 4 boxes for the kitchen or a desk and a cot for the guest room, then create them all at once. Leave "What" blank to write the contents on later.</p>
+      <div class="many-form">
+        <label class="fld">Room <select id="mRoom"></select></label>
+        <label class="fld">What (optional) <input type="text" id="mWhat" list="catList" maxlength="40" placeholder="e.g. Desk, Guitar case" autocomplete="off"></label>
+        <div class="fld">How many
+          <div class="copies" role="group" aria-label="How many labels">
+            <button type="button" id="mMinus" aria-label="Fewer">−</button>
+            <output id="mN" aria-live="polite">4</output>
+            <button type="button" id="mPlus" aria-label="More">+</button>
+          </div>
+        </div>
+        <button class="btn" type="button" id="mAdd">Add to list</button>
+      </div>
+      <ul class="mlist" id="mList"></ul>
+      <label class="testtick"><input type="checkbox" id="mTest"> Make these test labels (T001…)</label>
+      <button class="btn btn-primary btn-big" type="button" id="mCreate" disabled>Create labels</button>
+    </div>
+  </details>
 
   <section class="card" id="queueCard" aria-labelledby="queueH" hidden>
     <h2 id="queueH">To print</h2>
@@ -750,6 +762,7 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     $("#mMinus").disabled = mCount <= 1; $("#mPlus").disabled = mCount >= 20;
     $("#mList").innerHTML = staged.map((s, i) => `<li><b>×${s.count}</b><span>${esc(s.cat || "Contents to add")} → ${esc(roomName(s.dest) || "No room yet")}</span><button class="linkbtn" type="button" data-unstage="${i}">Remove</button></li>`).join("");
     const total = staged.reduce((t, s) => t + s.count, 0), test = $("#mTest").checked;
+    $("#manySub").textContent = total ? `${plural(total, "label", "labels")} in the list, not created yet` : "A room's worth at once, like 4 boxes for the kitchen";
     const first = nextOf(test ? tests() : list());
     $("#mCreate").disabled = !total;
     $("#mCreate").textContent = total
@@ -775,7 +788,7 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
       const r = await api("/api/boxes/batch", { method: "POST", body: JSON.stringify({ items, test: $("#mTest").checked }) });
       Object.assign(boxes, r.boxes);
       const made = Object.entries(r.boxes).map(([id, b]) => Object.assign({ id }, b)).sort((a, b) => num(a.n) - num(b.n));
-      staged = [];
+      staged = []; $("#manyCard").open = false;
       toast(`Created ${plural(made.length, "label", "labels")}: ${ranges(made).join(", ")}. They're waiting in To print.`);
       render(); refresh();
       $("#queueCard").scrollIntoView({ behavior: "smooth", block: "center" });
