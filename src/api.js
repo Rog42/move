@@ -1,10 +1,11 @@
 // Move app API over a D1 database bound as DB. Called from src/index.js for every /api/* request.
 //
 // Public (box scanning):
-//   GET    /api/state                 rooms + boxes
+//   GET    /api/state                 rooms + boxes + signs
 //   POST   /api/boxes                 create the next numbered box {cat, dest, test?}
 //   POST   /api/boxes/batch           create many {items: [{cat, dest}], test?}, consecutive numbers
-//   POST   /api/boxes/printed         mark labels printed {ids, printed?} (unprinted = To print list)
+//   POST   /api/boxes/printed         mark labels printed {ids, printed?} (unprinted = To print list); takes sign ids too
+//   POST   /api/signs                 a Not moving label {kind: "vinnies" | "sell", cat?}: no number or QR, just goes on To print
 //   PATCH  /api/boxes/:id             change cat / dest / status
 //   DELETE /api/boxes/:id             remove a box (its number is never reused)
 //   DELETE /api/boxes?test=1          remove every test label (T001...) and restart test numbering
@@ -49,6 +50,9 @@ function cleanPrintSettings(body) {
   }
   return out;
 }
+// Not moving labels (Vinnies, Sell / Give away). Ids start with "n", so they never clash with boxes (b001, t001).
+const SIGN_KINDS = new Set(["vinnies", "sell"]);
+const labelCol = (id) => (id[0] === "n" ? "signs" : "boxes");
 const LIST_COLS = new Set(["items", "meta"]);
 const ID_RE = /^[A-Za-z0-9_\-.~:@+]{1,120}$/;
 
@@ -158,8 +162,8 @@ export async function handleApi(request, env, parts) {
   try {
     // ---------- Boxes (public) ----------
     if (parts[0] === "state" && parts.length === 1 && method === "GET") {
-      const [rooms, boxes, print] = await Promise.all([collection(DB, "rooms"), collection(DB, "boxes"), getDoc(DB, "settings", "print")]);
-      return json({ rooms, boxes, settings: { print: { ...PRINT_DEFAULTS, ...(print ? print.data : {}) } }, now: Date.now(), loadFrom: loadFrom(env) });
+      const [rooms, boxes, signs, print] = await Promise.all([collection(DB, "rooms"), collection(DB, "boxes"), collection(DB, "signs"), getDoc(DB, "settings", "print")]);
+      return json({ rooms, boxes, signs, settings: { print: { ...PRINT_DEFAULTS, ...(print ? print.data : {}) } }, now: Date.now(), loadFrom: loadFrom(env) });
     }
 
     if (parts[0] === "settings" && parts[1] === "print" && parts.length === 2 && method === "PUT") {
@@ -221,9 +225,19 @@ export async function handleApi(request, env, parts) {
       const ids = body && Array.isArray(body.ids) ? body.ids.filter((x) => typeof x === "string" && ID_RE.test(x)).slice(0, 300) : [];
       const at = body && body.printed === false ? null : new Date().toISOString(), now = Date.now();
       if (ids.length) {
-        await DB.batch(ids.map((id) => DB.prepare("UPDATE docs SET data = json_set(data, '$.printedAt', json(?)), updated_at = ? WHERE col = 'boxes' AND id = ?").bind(JSON.stringify(at), now, id)));
+        await DB.batch(ids.map((id) => DB.prepare("UPDATE docs SET data = json_set(data, '$.printedAt', json(?)), updated_at = ? WHERE col = ? AND id = ?").bind(JSON.stringify(at), now, labelCol(id), id)));
       }
       return json({ ids, printedAt: at });
+    }
+
+    // A Not moving label: no number, nothing to scan. It waits on To print like a box label.
+    if (parts[0] === "signs" && parts.length === 1 && method === "POST") {
+      const body = await readBody(request);
+      if (!body || !SIGN_KINDS.has(body.kind)) return fail(400, "Say which label: vinnies or sell.");
+      const id = "n" + crypto.randomUUID().replace(/-/g, "").slice(0, 12);
+      const sign = { kind: body.kind, cat: typeof body.cat === "string" ? body.cat.trim().slice(0, 40) : "", createdAt: new Date().toISOString() };
+      await putDoc(DB, "signs", id, sign);
+      return json({ id, sign }, 201);
     }
 
     // Bulk delete is only for test labels; it also restarts test numbering at T001.

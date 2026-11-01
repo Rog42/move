@@ -116,6 +116,7 @@ details.fold[open] .chev { transform: rotate(-135deg); margin-bottom: -4px; }
 .qlist label { display: flex; align-items: center; gap: 6px; padding: 5px 9px 5px 7px; border: 1px solid var(--line); border-left: 4px solid var(--sw, var(--line)); border-radius: 8px; background: var(--bg); font-size: 13px; cursor: pointer; }
 .qlist input { accent-color: var(--accent); width: 16px; height: 16px; margin: 0; }
 .qlist b { font-family: var(--f-mono); font-weight: 500; }
+.qlist b.q-sign { font-family: inherit; font-weight: 700; }
 .qlist span { color: var(--muted); max-width: 11em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .qlist label.is-off { opacity: .55; }
 .qsel { display: flex; gap: 16px; }
@@ -397,7 +398,7 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
   const pad3 = (n) => String(num(n)).padStart(3, "0");
   const plural = (n, a, b) => `${n} ${n === 1 ? a : b}`;
 
-  let rooms = {}, boxes = {}, loaded = false;
+  let rooms = {}, boxes = {}, signs = {}, loaded = false;
   // Nothing goes past Packed until the truck is loaded. The server sets the time and enforces it.
   let loadAt = Date.parse("2026-11-06T17:00:00+11:00");
   const PACKED_I = STEPS.findIndex(([k]) => k === "packed");
@@ -438,6 +439,11 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     sell: { name: "Sell / Give away", lines: ["SELL /", "GIVE AWAY"], sub: "Not coming to Savoy" },
   };
   const signOf = () => { const v = $("#lbDest").value || ""; return v[0] === "!" && SIGNS[v.slice(1)] ? v.slice(1) : null; };
+  // Made Not moving labels wait on To print with the boxes until they're printed.
+  const pendingSigns = () => Object.entries(signs).map(([id, x]) => Object.assign({ id }, x)).filter((x) => !x.printedAt && SIGNS[x.kind]).sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
+  const labelItem = (id) => (id && (boxes[id] || signs[id])) || null;
+  // "3 boxes and 2 Not moving labels", for rows from the print list (a sign row has a kind).
+  const countText = (rows) => { const n = rows.filter((r) => r && r.kind).length, b = rows.length - n; return [b ? plural(b, "box", "boxes") : "", n ? plural(n, "Not moving label", "Not moving labels") : ""].filter(Boolean).join(" and ") || "Nothing"; };
   const roomName = (id) => (rooms[id] ? String(rooms[id].name) : "");
   const labelRoom = (id) => roomName(id).replace(/\s*\((check|TBC)\)\s*/i, "").trim();
   const hexOf = (c) => (c && /^#[0-9a-fA-F]{6}$/.test(c.hex || "") ? c.hex : "");
@@ -459,7 +465,7 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
   async function refresh() {
     try {
       const s = await api("/api/state");
-      rooms = s.rooms || {}; boxes = s.boxes || {}; loaded = true;
+      rooms = s.rooms || {}; boxes = s.boxes || {}; signs = s.signs || {}; loaded = true;
       if (num(s.loadFrom)) loadAt = num(s.loadFrom);
       applyPrintSettings(s.settings && s.settings.print);
       render();
@@ -481,7 +487,6 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     }
     const cats = [...new Set(all.map((b) => b.cat).filter(Boolean).concat(DEFAULT_CATS))];
     $("#catList").innerHTML = cats.map((c) => `<option value="${esc(c)}"></option>`).join("");
-    $("#lbCreate").textContent = $("#lbTest").checked ? `Create test label T${pad3(nextOf(tests()))}` : `Create box ${pad3(nextOf(all))}`;
     renderLog(); renderFilters(); renderRegister(); drawPreview(); renderMany(); renderQueue();
   }
 
@@ -619,16 +624,18 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
   }
   function drawPreview() {
     const cur = current && boxes[current] ? Object.assign({ id: current }, boxes[current]) : null;
-    // "Goes to" Vinnies or Sell / Give away: a plain label, printed straight away with no box made.
-    const sign = cur ? null : signOf();
+    // "Goes to" Vinnies or Sell / Give away: a plain label with no number. Creating one puts it on To print.
+    const made = !cur && current && signs[current] ? signs[current] : null, sign = signOf();
     if (cur) drawLabel($("#lbCanvas"), cur, false);
-    else if (sign) drawSign($("#lbCanvas"), sign, $("#lbCat").value.trim());
+    else if (made) drawSign($("#lbCanvas"), made.kind, made.cat);
+    else if (sign) drawSign($("#lbCanvas"), sign, $("#lbCat").value.trim(), true);
     else {
       const test = $("#lbTest").checked;
       drawLabel($("#lbCanvas"), { n: nextOf(test ? tests() : list()), test, cat: $("#lbCat").value.trim(), dest: $("#lbDest").value }, true);
     }
-    $("#lbCreate").hidden = !!sign; $("#lbTestRow").hidden = !!sign;
-    ["#lbPrint", "#lbShare", "#lbSave"].forEach((s) => ($(s).disabled = !cur && !sign));
+    $("#lbTestRow").hidden = !!sign;
+    $("#lbCreate").textContent = sign ? `Create ${SIGNS[sign].name} label` : $("#lbTest").checked ? `Create test label T${pad3(nextOf(tests()))}` : `Create box ${pad3(nextOf(list()))}`;
+    ["#lbPrint", "#lbShare", "#lbSave"].forEach((s) => ($(s).disabled = !cur && !made));
     $("#cpN").textContent = copies === 1 ? "1 side" : `${copies} sides`;
     $("#cpMinus").disabled = copies <= 1; $("#cpPlus").disabled = copies >= MAX_COPIES;
     const sheet = size === "a4";
@@ -639,8 +646,10 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     if (document.activeElement !== $("#adjBottom")) $("#adjBottom").value = sheetAdj.bottom;
     $("#lbHint").textContent = cur
       ? `Box ${tag(cur)} is ready${cur.printedAt ? "" : " and waiting in To print"}.${copies > 1 ? ` Stick one on each of ${copies} sides; every copy scans as the same box.` : ""} Change the fields to start the next one.`
+      : made
+      ? `${SIGNS[made.kind].name} label is ready${made.printedAt ? "" : " and waiting in To print"}.${copies > 1 ? ` It prints ${copies} copies, one for each side.` : ""} Change the fields to start the next one.`
       : sign
-      ? `${SIGNS[sign].name} labels have no number or QR code and aren't tracked in the app, so just print. Each one says DO NOT LOAD.`
+      ? `${SIGNS[sign].name} labels have no number or QR code and aren't scanned. Creating one adds it to To print with the box labels. Each one says DO NOT LOAD.`
       : "Numbers come from one shared counter, so two people can never get the same one.";
     if (loaded) renderQueue();
   }
@@ -649,13 +658,14 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
   // 4x6 and small sizes print one label per page; A4 lays labels 2 x 2 on Avery L7169 sheets.
   // ---------- Not moving: plain Vinnies and Sell / Give away labels (no number, QR or room) ----------
   // Listed under "Not moving" at the bottom of Goes to. "What's in it", if filled in, replaces the small line.
-  function drawSign(cv, kind, what) {
+  function drawSign(cv, kind, what, ghost) {
     const s = SIGNS[kind], [wmm, hmm] = SIZES[size];
     const W = wmm * 8, H = hmm * 8, portrait = H > W, m = Math.min(W, H);
     cv.width = W; cv.height = H;
     const c = cv.getContext("2d");
     c.fillStyle = "#FFFFFF"; c.fillRect(0, 0, W, H);
-    c.fillStyle = "#000000"; c.strokeStyle = "#000000"; c.textBaseline = "top";
+    const ink = ghost ? "#9A9A9A" : "#000000";
+    c.fillStyle = ink; c.strokeStyle = ink; c.textBaseline = "top";
     const bw = Math.max(4, Math.round(m * 0.03)), pad = Math.round(m * 0.06) + bw;
     const barH = Math.round(portrait ? W * 0.2 : H * 0.28), inner = W - 2 * pad;
     c.lineWidth = bw; c.strokeRect(bw / 2, bw / 2, W - bw, H - bw);
@@ -681,7 +691,7 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
   function printIds(ids) {
     const work = document.createElement("canvas"), urls = [];
     ids.forEach((id) => {
-      drawLabel(work, Object.assign({ id }, boxes[id]), false);
+      if (signs[id]) drawSign(work, signs[id].kind, signs[id].cat); else drawLabel(work, Object.assign({ id }, boxes[id]), false);
       const u = work.toDataURL("image/png");
       for (let i = 0; i < copies; i++) urls.push(u);
     });
@@ -710,14 +720,14 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     if (!ids.length) return;
     try {
       const r = await api("/api/boxes/printed", { method: "POST", body: JSON.stringify({ ids, printed: printed !== false }) });
-      ids.forEach((id) => { if (boxes[id]) boxes[id].printedAt = r.printedAt; });
+      ids.forEach((id) => { const x = labelItem(id); if (x) x.printedAt = r.printedAt; });
     } catch (e) { toast("Couldn't update the print list. It'll catch up on the next refresh."); }
     render();
   }
 
   // ---------- To print: every label not printed yet, shared across phones and computers ----------
   let lastBatch = [];
-  const queue = () => all_().filter((b) => !b.printedAt).sort((a, b) => (a.test ? 1 : 0) - (b.test ? 1 : 0) || num(a.n) - num(b.n));
+  const queue = () => { const q = all_().filter((b) => !b.printedAt); return q.filter((b) => !b.test).concat(pendingSigns(), q.filter((b) => b.test)); };
   function ranges(rows) {
     const out = [];
     let s = null, p = null;
@@ -734,16 +744,18 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
   function renderQueue() {
     const { q, sel } = queueSel(), card = $("#queueCard");
     [...qOff].forEach((id) => { if (!q.some((b) => b.id === id)) qOff.delete(id); });
-    card.hidden = !all_().length;
+    card.hidden = !all_().length && !Object.keys(signs).length;
     if (card.hidden) return;
     $("#qList").hidden = $("#queueBtns").hidden = !q.length;
     const sheet = size === "a4", labels = sel.length * copies, sizeName = $("#lbSize").selectedOptions[0] ? $("#lbSize").selectedOptions[0].textContent : size;
     const sheets = sheet ? Math.ceil(labels / 4) : 0, spare = sheets * 4 - labels;
     $("#queueText").innerHTML = !q.length ? "Nothing waiting to print. To print labels again, type their numbers below."
-      : !sel.length ? `${plural(q.length, "box", "boxes")} waiting, none ticked.`
-      : `${plural(q.length, "box", "boxes")} waiting${sel.length < q.length ? `, ${sel.length} ticked` : ""}. At ${esc(sizeName)} and ${plural(copies, "side", "sides")} that's ${plural(labels, "label", "labels")}${sheets ? ` on ${plural(sheets, "sheet", "sheets")}${spare ? `, with ${plural(spare, "spot", "spots")} left empty on the last one` : ""}` : ""}.`;
+      : !sel.length ? `${countText(q)} waiting, none ticked.`
+      : `${countText(q)} waiting${sel.length < q.length ? `, ${sel.length} ticked` : ""}. At ${esc(sizeName)} and ${plural(copies, "side", "sides")} that's ${plural(labels, "label", "labels")}${sheets ? ` on ${plural(sheets, "sheet", "sheets")}${spare ? `, with ${plural(spare, "spot", "spots")} left empty on the last one` : ""}` : ""}.`;
     $("#qList").innerHTML = q.map((b) => {
-      const r = rooms[b.dest], off = qOff.has(b.id);
+      const off = qOff.has(b.id);
+      if (b.kind) return `<li><label class="${off ? "is-off" : ""}"><input type="checkbox" data-q="${esc(b.id)}" ${off ? "" : "checked"}><b class="q-sign">${esc(SIGNS[b.kind].name)}</b><span>${esc(b.cat || "Not moving")}</span></label></li>`;
+      const r = rooms[b.dest];
       return `<li><label class="${off ? "is-off" : ""}" style="--sw:${r ? hexOf(r.colour) || "var(--line)" : "var(--line)"}"><input type="checkbox" data-q="${esc(b.id)}" ${off ? "" : "checked"}><b>${tag(b)}</b><span>${esc(b.cat || (r ? r.name : ""))}</span></label></li>`;
     }).join("");
     $(".qsel").hidden = q.length < 2;
@@ -751,10 +763,10 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     $("#queuePrint").disabled = !sel.length; $("#queueSkip").disabled = !sel.length;
     const full = sheet ? fullSheetCount(sel.length) : 0;
     $("#queueFull").hidden = !(full > 0 && full < sel.length);
-    if (!$("#queueFull").hidden) $("#queueFull").textContent = `Full sheets only (${plural(full, "box", "boxes")}, ${plural((full * copies) / 4, "sheet", "sheets")})`;
+    if (!$("#queueFull").hidden) $("#queueFull").textContent = `Full sheets only (${countText(sel.slice(0, full))}, ${plural((full * copies) / 4, "sheet", "sheets")})`;
     if (!skipArmed) $("#queueSkip").textContent = sel.length === q.length ? "Mark all as printed" : "Mark ticked as printed";
     $("#queueConfirm").hidden = !lastBatch.length;
-    if (lastBatch.length) $("#queueConfirmText").textContent = `Did ${lastBatch.length === 1 ? "it" : lastBatch.length === 2 ? "both boxes" : `all ${lastBatch.length} boxes`} print OK? If not, keep them on the list and reprint.`;
+    if (lastBatch.length) $("#queueConfirmText").textContent = `Did ${lastBatch.length === 1 ? "it" : lastBatch.length === 2 ? "both" : `all ${lastBatch.length}`} print OK? If not, keep them on the list and reprint.`;
   }
   $("#qList").addEventListener("change", (e) => { const c = e.target.closest("[data-q]"); if (!c) return; if (c.checked) qOff.delete(c.dataset.q); else qOff.add(c.dataset.q); renderQueue(); });
   $("#qAll").addEventListener("click", () => { qOff.clear(); renderQueue(); });
@@ -762,7 +774,7 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
   function printBatch(ids) { if (!ids.length) return; lastBatch = ids; printIds(ids); renderQueue(); }
   $("#queuePrint").addEventListener("click", () => printBatch(queueSel().sel.map((b) => b.id)));
   $("#queueFull").addEventListener("click", () => { const { sel } = queueSel(); printBatch(sel.slice(0, fullSheetCount(sel.length)).map((b) => b.id)); });
-  $("#queueOk").addEventListener("click", async () => { const ids = lastBatch; lastBatch = []; qOff.clear(); await markPrinted(ids, true); toast(`${plural(ids.length, "box", "boxes")} taken off the print list.`); });
+  $("#queueOk").addEventListener("click", async () => { const ids = lastBatch; lastBatch = []; qOff.clear(); await markPrinted(ids, true); toast(`${countText(ids.map(labelItem))} taken off the print list.`); });
   $("#queueNo").addEventListener("click", () => { lastBatch = []; renderQueue(); });
   let skipArmed = false, skipT;
   $("#queueSkip").addEventListener("click", async () => {
@@ -903,10 +915,15 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
   $("#lbSize").value = size;
   $("#lbSize").addEventListener("change", (e) => { size = e.target.value; sharePrint({ size }); drawPreview(); renderQueue(); });
   $("#lbCreate").addEventListener("click", async () => {
-    if (signOf()) return; // Not moving labels aren't boxes
-    const cat = $("#lbCat").value.trim(), dest = $("#lbDest").value || null;
+    const cat = $("#lbCat").value.trim(), dest = $("#lbDest").value || null, kind = signOf();
     const btn = $("#lbCreate"); btn.disabled = true;
     try {
+      if (kind) { // Not moving: no box and no number, just a label waiting on To print
+        const r = await api("/api/signs", { method: "POST", body: JSON.stringify({ kind, cat }) });
+        signs[r.id] = r.sign; current = r.id;
+        toast(`${SIGNS[kind].name} label added to To print`);
+        render(); refresh(); return;
+      }
       const r = await api("/api/boxes", { method: "POST", body: JSON.stringify({ cat, dest, test: $("#lbTest").checked }) });
       boxes[r.id] = r.box; current = r.id; hot = r.id;
       toast(`${r.box.test ? "Test label" : "Box"} ${tag(r.box)} created`);
@@ -945,35 +962,29 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     push(tail + `trailer\n<< /Size ${count} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`);
     return new Blob(parts, { type: "application/pdf" });
   }
-  async function labelFile(b) {
-    const base = `${b ? "box-" + tag(b) : signOf()}${copies > 1 ? "-x" + copies : ""}`;
+  async function labelFile(id) {
+    const base = `${boxes[id] ? "box-" + tag(boxes[id]) : signs[id].kind}${copies > 1 ? "-x" + copies : ""}`;
     if (!isRoll()) return new File([labelPdf()], base + ".pdf", { type: "application/pdf" });
     const blob = await new Promise((res) => stripCanvas().toBlob(res, "image/png"));
     return blob ? new File([blob], base + ".png", { type: "image/png" }) : null;
   }
-  // The box just made, or none when a Not moving label is showing instead.
-  const shownBox = () => (current && boxes[current] ? boxes[current] : null);
+  // The box or Not moving label just made (or picked from a box's card).
+  const shownId = () => (labelItem(current) ? current : null);
   $("#lbPrint").addEventListener("click", () => {
-    if (!shownBox()) {
-      const sign = signOf(); if (!sign) return;
-      drawPreview();
-      const u = $("#lbCanvas").toDataURL("image/png");
-      printUrls(Array.from({ length: copies }, () => u));
-      return;
-    }
-    printIds([current]);
-    if (!boxes[current].printedAt) markPrinted([current], true);
+    const id = shownId(); if (!id) return;
+    printIds([id]);
+    if (!labelItem(id).printedAt) markPrinted([id], true);
   });
   $("#lbShare").addEventListener("click", async () => {
-    const b = shownBox(); if (!b && !signOf()) return;
-    const file = await labelFile(b); if (!file) return;
+    const id = shownId(); if (!id) return;
+    const file = await labelFile(id); if (!file) return;
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      try { await navigator.share({ files: [file], title: b ? `Box ${tag(b)}` : SIGNS[signOf()].name }); } catch (e) { if (e && e.name !== "AbortError") toast("Sharing didn't work. Try Save."); }
+      try { await navigator.share({ files: [file], title: boxes[id] ? `Box ${tag(boxes[id])}` : SIGNS[signs[id].kind].name }); } catch (e) { if (e && e.name !== "AbortError") toast("Sharing didn't work. Try Save."); }
     } else toast("This browser can't share files. Use Save or Print.");
   });
   $("#lbSave").addEventListener("click", async () => {
-    const b = shownBox(); if (!b && !signOf()) return;
-    const file = await labelFile(b); if (!file) return;
+    const id = shownId(); if (!id) return;
+    const file = await labelFile(id); if (!file) return;
     const a = document.createElement("a");
     a.href = URL.createObjectURL(file); a.download = file.name;
     document.body.appendChild(a); a.click(); a.remove();
