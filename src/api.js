@@ -10,6 +10,7 @@
 //   DELETE /api/boxes?test=1          remove every test label (T001...) and restart test numbering
 //   POST   /api/scan/:id              move a box one step: labelled > packed > loaded > inroom > unpacked
 //                                     Before loading opens (LOAD_FROM), a packed box stays packed: result "held"
+//                                     ?via=qr (a label's QR code was scanned) also takes it off the To print list
 //   PUT    /api/settings/print        shared label settings {size?, copies?, top?, bottom?}, used by every phone
 //   POST   /api/boxes/:id/photos      add a photo of what's in a box (raw JPEG, PNG or WebP body)
 //   GET    /api/photos/:pid           the photo itself
@@ -317,23 +318,41 @@ export async function handleApi(request, env, parts) {
     if (parts[0] === "scan" && parts.length === 2 && method === "POST") {
       const id = parts[1];
       if (!ID_RE.test(id)) return fail(400, "Bad box id.");
+      // Scanning a label's QR code proves the label was printed, so the box comes off To print.
+      // A typed number proves nothing about the label, so it leaves the print list alone.
+      const viaQr = new URL(request.url).searchParams.get("via") === "qr";
       for (let attempt = 0; attempt < 3; attempt++) {
         const cur = await getDoc(DB, "boxes", id);
         if (!cur) return fail(404, "No such box.");
         const b = cur.data, from = statusOf(b), now = Date.now();
+        const stamp = new Date(now).toISOString(), printed = viaQr && !b.printedAt;
+        // When the scan doesn't move the box (too soon after the last one, already unpacked, or held
+        // until loading opens), a QR scan still records that its label exists. Null means try again.
+        const stay = async (reply) => {
+          if (!printed) return json({ ...reply, box: b });
+          const kept = { ...b, printedAt: stamp };
+          const res = await DB.prepare("UPDATE docs SET data = ?, updated_at = ? WHERE col = 'boxes' AND id = ? AND updated_at = ?")
+            .bind(JSON.stringify(kept), Math.max(now, cur.at + 1), id, cur.at).run();
+          return res.meta && res.meta.changes === 1 ? json({ ...reply, box: kept, printed: true }) : null;
+        };
+        let out = null;
         const last = b.scannedAt ? Date.parse(b.scannedAt) : 0;
-        if (now - last < SCAN_GUARD_MS) return json({ id, box: b, from, to: from, result: "recent" });
         const i = STEPS.indexOf(from);
-        if (i >= STEPS.length - 1) return json({ id, box: b, from, to: from, result: "done" });
-        const to = STEPS[i + 1];
-        if (i + 1 > PACKED) {
-          const at = await boxLoadFrom(DB, env, b);
-          if (now < at) return json({ id, box: b, from, to: from, result: "held", loadFrom: at, opens: loadingText(at) });
+        if (now - last < SCAN_GUARD_MS) out = await stay({ id, from, to: from, result: "recent" });
+        else if (i >= STEPS.length - 1) out = await stay({ id, from, to: from, result: "done" });
+        else {
+          const to = STEPS[i + 1];
+          const at = i + 1 > PACKED ? await boxLoadFrom(DB, env, b) : 0;
+          if (now < at) out = await stay({ id, from, to: from, result: "held", loadFrom: at, opens: loadingText(at) });
+          else {
+            const next = { ...b, status: to, statusAt: stamp, scannedAt: stamp };
+            if (printed) next.printedAt = stamp;
+            const res = await DB.prepare("UPDATE docs SET data = ?, updated_at = ? WHERE col = 'boxes' AND id = ? AND updated_at = ?")
+              .bind(JSON.stringify(next), Math.max(now, cur.at + 1), id, cur.at).run();
+            if (res.meta && res.meta.changes === 1) out = json({ id, box: next, from, to, result: "moved", printed });
+          }
         }
-        const next = { ...b, status: to, statusAt: new Date(now).toISOString(), scannedAt: new Date(now).toISOString() };
-        const res = await DB.prepare("UPDATE docs SET data = ?, updated_at = ? WHERE col = 'boxes' AND id = ? AND updated_at = ?")
-          .bind(JSON.stringify(next), now, id, cur.at).run();
-        if (res.meta && res.meta.changes === 1) return json({ id, box: next, from, to, result: "moved" });
+        if (out) return out;
       }
       return fail(409, "Someone else scanned that box at the same moment. Try again.");
     }
