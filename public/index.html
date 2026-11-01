@@ -102,6 +102,11 @@ details.fold > summary::-webkit-details-marker { display: none; }
 details.fold .chev { width: 9px; height: 9px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(45deg); margin: 0 4px 4px 0; transition: transform .15s ease; flex: none; }
 details.fold[open] .chev { transform: rotate(-135deg); margin-bottom: -4px; }
 .fold-body { display: flex; flex-direction: column; gap: 12px; padding: 0 16px 16px; }
+.signs { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 420px) { .signs { grid-template-columns: 1fr; } }
+.sign-row { display: flex; gap: 12px; align-items: center; }
+.sign-row canvas { width: 72px; height: auto; border: 1px solid var(--line); border-radius: 6px; background: #FFFFFF; flex: none; }
+.sign-row b { display: block; font-size: 15px; margin-bottom: 6px; }
 .mlist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .mlist li { display: flex; gap: 10px; align-items: center; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); font-size: 14px; }
 .mlist li b { font-family: var(--f-mono); font-weight: 500; min-width: 2.4em; }
@@ -306,6 +311,18 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
       <ul class="mlist" id="mList"></ul>
       <label class="testtick"><input type="checkbox" id="mTest"> Make these test labels (T001…)</label>
       <button class="btn btn-primary btn-big" type="button" id="mCreate" disabled>Create labels</button>
+    </div>
+  </details>
+
+  <details class="card fold" id="signCard">
+    <summary><span class="fold-t"><b>Not moving: Vinnies and Sell / Give away</b><span id="signSub">Plain labels with no number or QR code, for things staying behind</span></span><i class="chev" aria-hidden="true"></i></summary>
+    <div class="fold-body">
+      <p class="hint">These aren't boxes in the app, so nothing is tracked or scanned. Each label says DO NOT LOAD. They print at the label size above.</p>
+      <div class="signs">
+        <div class="sign-row"><canvas id="sgVinnies" aria-label="Vinnies label preview"></canvas><div><b>Vinnies</b><div class="copies" role="group" aria-label="How many Vinnies labels"><button type="button" data-sign="vinnies" data-d="-1" aria-label="Fewer">−</button><output id="sgVinniesN">0</output><button type="button" data-sign="vinnies" data-d="1" aria-label="More">+</button></div></div></div>
+        <div class="sign-row"><canvas id="sgSell" aria-label="Sell or give away label preview"></canvas><div><b>Sell / Give away</b><div class="copies" role="group" aria-label="How many Sell or give away labels"><button type="button" data-sign="sell" data-d="-1" aria-label="Fewer">−</button><output id="sgSellN">0</output><button type="button" data-sign="sell" data-d="1" aria-label="More">+</button></div></div></div>
+      </div>
+      <button class="btn btn-primary" type="button" id="sgPrint" disabled>Print</button>
     </div>
   </details>
 
@@ -634,6 +651,59 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
 
   // ---------- Printing: one routine for a single box or the whole queue ----------
   // 4x6 and small sizes print one label per page; A4 lays labels 2 x 2 on Avery L7169 sheets.
+  // ---------- Not moving: plain Vinnies and Sell / Give away labels (no number, QR or room) ----------
+  const SIGNS = {
+    vinnies: { lines: ["VINNIES"], sub: "Donate to St Vincent de Paul" },
+    sell: { lines: ["SELL /", "GIVE AWAY"], sub: "Not coming to Savoy" },
+  };
+  function drawSign(cv, kind) {
+    const s = SIGNS[kind], [wmm, hmm] = SIZES[size];
+    const W = wmm * 8, H = hmm * 8, portrait = H > W, m = Math.min(W, H);
+    cv.width = W; cv.height = H;
+    const c = cv.getContext("2d");
+    c.fillStyle = "#FFFFFF"; c.fillRect(0, 0, W, H);
+    c.fillStyle = "#000000"; c.strokeStyle = "#000000"; c.textBaseline = "top";
+    const bw = Math.max(4, Math.round(m * 0.03)), pad = Math.round(m * 0.06) + bw;
+    const barH = Math.round(portrait ? W * 0.2 : H * 0.28), inner = W - 2 * pad;
+    c.lineWidth = bw; c.strokeRect(bw / 2, bw / 2, W - bw, H - bw);
+    let y = pad;
+    const fsT = fitFont(c, "NOT MOVING", inner, m * (portrait ? 0.09 : 0.13));
+    c.fillText("NOT MOVING", pad, y); y += Math.round(fsT * 1.35);
+    const fsS = portrait ? fitFont(c, s.sub, inner, m * 0.07) : 0;
+    const bottom = H - barH - Math.round(pad * 0.6) - (fsS ? Math.round(fsS * 1.6) : 0);
+    // The big words: as large as fits across and down, the same size for every line.
+    const fsB = Math.min(...s.lines.map((l) => fitFont(c, l, inner, (bottom - y) / (s.lines.length * 1.05))));
+    c.font = `700 ${fsB}px ${LFONT}`;
+    const block = fsB * 1.05 * s.lines.length;
+    let ly = y + Math.max(0, Math.round((bottom - y - block) / 2));
+    s.lines.forEach((l) => { c.fillText(l, pad, ly); ly += Math.round(fsB * 1.05); });
+    if (fsS) { c.font = `700 ${fsS}px ${LFONT}`; c.fillText(s.sub, pad, bottom + Math.round(fsS * 0.3)); }
+    c.fillRect(0, H - barH, W, barH);
+    c.fillStyle = "#FFFFFF";
+    const fsD = fitFont(c, "DO NOT LOAD", W - 2 * pad, barH * (portrait ? 0.62 : 0.7));
+    c.fillText("DO NOT LOAD", pad, H - barH + Math.round((barH - fsD) / 2));
+  }
+  const signCount = { vinnies: 0, sell: 0 };
+  function renderSigns() {
+    drawSign($("#sgVinnies"), "vinnies"); drawSign($("#sgSell"), "sell");
+    $("#sgVinniesN").textContent = signCount.vinnies; $("#sgSellN").textContent = signCount.sell;
+    document.querySelectorAll("[data-sign]").forEach((b) => { const n = signCount[b.dataset.sign]; b.disabled = Number(b.dataset.d) < 0 ? n <= 0 : n >= 40; });
+    const n = signCount.vinnies + signCount.sell, sheets = size === "a4" ? Math.ceil(n / 4) : 0;
+    $("#sgPrint").disabled = !n;
+    $("#sgPrint").textContent = n ? `Print ${plural(n, "label", "labels")}${sheets ? ` (${plural(sheets, "sheet", "sheets")})` : ""}` : "Print";
+  }
+  $("#signCard").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-sign]"); if (!b) return;
+    signCount[b.dataset.sign] = Math.max(0, Math.min(40, signCount[b.dataset.sign] + Number(b.dataset.d)));
+    renderSigns();
+  });
+  $("#signCard").addEventListener("toggle", () => { if ($("#signCard").open) renderSigns(); });
+  $("#sgPrint").addEventListener("click", () => {
+    const work = document.createElement("canvas"), urls = [];
+    ["vinnies", "sell"].forEach((k) => { if (!signCount[k]) return; drawSign(work, k); const u = work.toDataURL("image/png"); for (let i = 0; i < signCount[k]; i++) urls.push(u); });
+    printUrls(urls);
+  });
+
   function printIds(ids) {
     const work = document.createElement("canvas"), urls = [];
     ids.forEach((id) => {
@@ -641,6 +711,10 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
       const u = work.toDataURL("image/png");
       for (let i = 0; i < copies; i++) urls.push(u);
     });
+    printUrls(urls);
+  }
+  // Lays out label images for the chosen size (2 x 2 on A4 sheets, or one per page) and prints.
+  function printUrls(urls) {
     let st = document.getElementById("pageSize");
     if (!st) { st = document.createElement("style"); st.id = "pageSize"; document.head.appendChild(st); }
     let html = "";
@@ -805,7 +879,7 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
   }
   function applyPrintSettings(p) {
     if (!p || Date.now() - printEditedAt < 8000) return; // a change made here is still on its way to the server
-    if (typeof p.size === "string" && SIZES[p.size] && document.activeElement !== $("#lbSize")) { size = p.size; $("#lbSize").value = size; }
+    if (typeof p.size === "string" && SIZES[p.size] && document.activeElement !== $("#lbSize")) { const changed = p.size !== size; size = p.size; $("#lbSize").value = size; if (changed && $("#signCard").open) renderSigns(); }
     if (Number.isInteger(p.copies) && p.copies >= 1 && p.copies <= MAX_COPIES) copies = p.copies;
     const editing = document.activeElement === $("#adjTop") || document.activeElement === $("#adjBottom");
     if (Number.isFinite(p.top) && Number.isFinite(p.bottom) && !editing) sheetAdj = { top: p.top, bottom: p.bottom };
@@ -853,7 +927,7 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
   $("#lbTest").addEventListener("change", () => { current = null; render(); });
   $("#lbDest").addEventListener("change", () => { current = null; drawPreview(); });
   $("#lbSize").value = size;
-  $("#lbSize").addEventListener("change", (e) => { size = e.target.value; sharePrint({ size }); drawPreview(); renderQueue(); });
+  $("#lbSize").addEventListener("change", (e) => { size = e.target.value; sharePrint({ size }); drawPreview(); renderQueue(); if ($("#signCard").open) renderSigns(); });
   $("#lbCreate").addEventListener("click", async () => {
     const cat = $("#lbCat").value.trim(), dest = $("#lbDest").value || null;
     const btn = $("#lbCreate"); btn.disabled = true;

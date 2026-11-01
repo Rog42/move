@@ -37,6 +37,8 @@ Until step 3 is done, `/api/lists/*` returns 403. The account and policy numbers
 
 **Making labels in bulk:** tap **Make several labels** (folded away below New box label) to open it, add rows of room, what (optional) and how many, for example Kitchen × 4 or Desk → Studio × 1, then create them all at once with consecutive numbers. If you leave What blank, the label gets a line to write the contents on.
 
+**Not moving:** the folded **Not moving: Vinnies and Sell / Give away** card prints plain labels with no number, QR code or room colour: big VINNIES or SELL / GIVE AWAY, with DO NOT LOAD across the bottom. Pick how many of each and print; they use the label size and alignment above and aren't tracked in the app.
+
 **Reprinting:** type box numbers or ranges into **Reprint labels** at the bottom of To print (for example `12-17, 21`, or `T3` for a test label). They go back on the list and print like new ones. A box's card also has a **Reprint** button once its label has been printed.
 
 **To print:** every new label waits there until it's printed. Each one has a tick box, so you can hold some back. On A4, **Full sheets only** prints just enough boxes to fill whole sheets and keeps the odd ones for next time, because half-used label sheets shouldn't go back through a laser. The list is shared, so labels made on a phone can be printed from the Mac. Print all uses the size and sides chosen in New box label. Once you confirm the labels printed OK, they come off the list. Scanning a label's QR code (phone camera or the in-app scanner) also takes it off, since the label clearly exists; typing a box number doesn't. Printing a single box with its own Print button takes it off the list straight away.
