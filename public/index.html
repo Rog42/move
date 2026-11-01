@@ -401,7 +401,9 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
   // Nothing goes past Packed until the truck is loaded. The server sets the time and enforces it.
   let loadAt = Date.parse("2026-11-06T17:00:00+11:00");
   const PACKED_I = STEPS.findIndex(([k]) => k === "packed");
-  const lockedNow = () => Date.now() < loadAt;
+  // A room can open early: its room document carries its own loadFrom (Craft, Fri 9am).
+  const lockAt = (b) => { const r = b && rooms[b.dest]; const t = Date.parse((r && r.loadFrom) || ""); return Number.isFinite(t) ? t : loadAt; };
+  const lockedFor = (b) => Date.now() < lockAt(b);
   function loadingText(at) {
     const d = new Date(at);
     const day = d.toLocaleDateString("en-AU", { timeZone: "Australia/Sydney", weekday: "short", day: "numeric", month: "short" });
@@ -940,7 +942,7 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
       let note, kind;
       if (r.result === "moved") { note = STEP_NAME[r.to]; kind = "moved"; log.unshift({ id, t: tag(r.box), cat: r.box.cat, note, from: r.from, undo: true }); }
       else if (r.result === "recent") { note = `already scanned, still ${STEP_NAME[r.to].toLowerCase()}`; kind = "warn"; }
-      else if (r.result === "held") { if (num(r.loadFrom)) loadAt = num(r.loadFrom); note = `still ${STEP_NAME[r.to].toLowerCase()}, loading opens ${loadingText(loadAt)}`; kind = "held"; }
+      else if (r.result === "held") { note = `still ${STEP_NAME[r.to].toLowerCase()}, loading opens ${loadingText(num(r.loadFrom) || lockAt(r.box))}`; kind = "held"; }
       else { note = "already unpacked"; kind = "warn"; }
       if (kind !== "moved") log.unshift({ id, t: tag(r.box), cat: r.box.cat, note, undo: false });
       log = log.slice(0, 20);
@@ -1031,7 +1033,7 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     const b = r.kind !== "bad" ? boxes[id] : null;
     if (r.kind === "held" && b) {
       // Before loading opens: say what the box is and where it goes, and leave it packed.
-      camMsg(`${tag(b)} is packed for ${labelRoom(b.dest) || "no room yet"}${b.cat ? " · " + b.cat : ""}. Loading opens ${loadingText(loadAt)}.`, "warn");
+      camMsg(`${tag(b)} is packed for ${labelRoom(b.dest) || "no room yet"}${b.cat ? " · " + b.cat : ""}. Loading opens ${loadingText(lockAt(b))}.`, "warn");
     } else {
       camMsg(r.text + (b && !hasContents(b) ? " · no contents yet" : ""), r.kind);
     }
@@ -1062,16 +1064,16 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     const held = !!(opts && opts.held);
     const room = rooms[b.dest];
     $("#sheetHeld").hidden = !held;
-    if (held) $("#sheetHeld").innerHTML = `<i class="sw" style="--sw:${room ? hexOf(room.colour) || "transparent" : "transparent"}"></i><div><b>${STEP_NAME[statusOf(b)]} · ${esc(room ? room.name : "No room yet")}</b><span>Loading opens ${esc(loadingText(loadAt))}, so this scan didn't move it.</span></div>`;
+    if (held) $("#sheetHeld").innerHTML = `<i class="sw" style="--sw:${room ? hexOf(room.colour) || "transparent" : "transparent"}"></i><div><b>${STEP_NAME[statusOf(b)]} · ${esc(room ? room.name : "No room yet")}</b><span>Loading opens ${esc(loadingText(lockAt(b)))}, so this scan didn't move it.</span></div>`;
     const askHeld = held && !hasContents(b);
     $("#sheetAsk").hidden = !(ask || askHeld);
     if (ask) $("#sheetAsk").textContent = `${tag(b)} is ${STEP_NAME[statusOf(b)].toLowerCase()}. What's in it?`;
     else if (askHeld) $("#sheetAsk").textContent = "Nothing listed yet. Type what's in it or take a photo.";
     $("#sheetNum").textContent = tag(b) + " · " + STEP_NAME[statusOf(b)];
-    const at = STEPS.findIndex(([k]) => k === statusOf(b)), lock = lockedNow();
+    const at = STEPS.findIndex(([k]) => k === statusOf(b)), lock = lockedFor(b);
     $("#sheetSeg").innerHTML = STEPS.map(([k, l], i) => `<button type="button" data-step="${k}" aria-pressed="${statusOf(b) === k}" ${lock && i > PACKED_I && i > at ? "disabled" : ""}>${l}</button>`).join("");
     $("#sheetLock").hidden = !lock;
-    if (lock) $("#sheetLock").textContent = `Loaded, In room and Unpacked open ${loadingText(loadAt)}.`;
+    if (lock) $("#sheetLock").textContent = `Loaded, In room and Unpacked open ${loadingText(lockAt(b))}${room && room.loadFrom ? ` for ${room.name}` : ""}.`;
     $("#shCat").value = b.cat || "";
     delPhotoArmed = null; renderSheetPhotos();
     $("#shDest").innerHTML = `<option value="">No room yet</option>` + savoyRooms().map((r) => `<option value="${esc(r.id)}" ${r.id === b.dest ? "selected" : ""}>${esc(r.name)}</option>`).join("");
