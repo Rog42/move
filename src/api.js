@@ -325,29 +325,34 @@ export async function handleApi(request, env, parts) {
         const cur = await getDoc(DB, "boxes", id);
         if (!cur) return fail(404, "No such box.");
         const b = cur.data, from = statusOf(b), now = Date.now();
-        const last = b.scannedAt ? Date.parse(b.scannedAt) : 0;
-        if (now - last < SCAN_GUARD_MS) return json({ id, box: b, from, to: from, result: "recent" });
-        const i = STEPS.indexOf(from);
-        if (i >= STEPS.length - 1) return json({ id, box: b, from, to: from, result: "done" });
-        const to = STEPS[i + 1];
         const stamp = new Date(now).toISOString(), printed = viaQr && !b.printedAt;
-        if (i + 1 > PACKED) {
-          const at = await boxLoadFrom(DB, env, b);
-          if (now < at) {
-            const held = { id, from, to: from, result: "held", loadFrom: at, opens: loadingText(at) };
-            if (!printed) return json({ ...held, box: b });
-            const kept = { ...b, printedAt: stamp };
+        // When the scan doesn't move the box (too soon after the last one, already unpacked, or held
+        // until loading opens), a QR scan still records that its label exists. Null means try again.
+        const stay = async (reply) => {
+          if (!printed) return json({ ...reply, box: b });
+          const kept = { ...b, printedAt: stamp };
+          const res = await DB.prepare("UPDATE docs SET data = ?, updated_at = ? WHERE col = 'boxes' AND id = ? AND updated_at = ?")
+            .bind(JSON.stringify(kept), Math.max(now, cur.at + 1), id, cur.at).run();
+          return res.meta && res.meta.changes === 1 ? json({ ...reply, box: kept, printed: true }) : null;
+        };
+        let out = null;
+        const last = b.scannedAt ? Date.parse(b.scannedAt) : 0;
+        const i = STEPS.indexOf(from);
+        if (now - last < SCAN_GUARD_MS) out = await stay({ id, from, to: from, result: "recent" });
+        else if (i >= STEPS.length - 1) out = await stay({ id, from, to: from, result: "done" });
+        else {
+          const to = STEPS[i + 1];
+          const at = i + 1 > PACKED ? await boxLoadFrom(DB, env, b) : 0;
+          if (now < at) out = await stay({ id, from, to: from, result: "held", loadFrom: at, opens: loadingText(at) });
+          else {
+            const next = { ...b, status: to, statusAt: stamp, scannedAt: stamp };
+            if (printed) next.printedAt = stamp;
             const res = await DB.prepare("UPDATE docs SET data = ?, updated_at = ? WHERE col = 'boxes' AND id = ? AND updated_at = ?")
-              .bind(JSON.stringify(kept), Math.max(now, cur.at + 1), id, cur.at).run();
-            if (res.meta && res.meta.changes === 1) return json({ ...held, box: kept, printed: true });
-            continue;
+              .bind(JSON.stringify(next), Math.max(now, cur.at + 1), id, cur.at).run();
+            if (res.meta && res.meta.changes === 1) out = json({ id, box: next, from, to, result: "moved", printed });
           }
         }
-        const next = { ...b, status: to, statusAt: stamp, scannedAt: stamp };
-        if (printed) next.printedAt = stamp;
-        const res = await DB.prepare("UPDATE docs SET data = ?, updated_at = ? WHERE col = 'boxes' AND id = ? AND updated_at = ?")
-          .bind(JSON.stringify(next), Math.max(now, cur.at + 1), id, cur.at).run();
-        if (res.meta && res.meta.changes === 1) return json({ id, box: next, from, to, result: "moved", printed });
+        if (out) return out;
       }
       return fail(409, "Someone else scanned that box at the same moment. Try again.");
     }
