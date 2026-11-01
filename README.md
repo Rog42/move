@@ -37,7 +37,7 @@ Until step 3 is done, `/api/lists/*` returns 403. The account and policy numbers
 
 **Making labels in bulk:** tap **Make several labels** (folded away below New box label) to open it, add rows of room, what (optional) and how many, for example Kitchen × 4 or Desk → Studio × 1, then create them all at once with consecutive numbers. If you leave What blank, the label gets a line to write the contents on.
 
-**Not moving:** the folded **Not moving: Vinnies and Sell / Give away** card prints plain labels with no number, QR code or room colour: big VINNIES or SELL / GIVE AWAY, with DO NOT LOAD across the bottom. Pick how many of each and print; they use the label size and alignment above and aren't tracked in the app.
+**Not moving:** at the bottom of **Goes to** on New box label, under Not moving, are **Vinnies** and **Sell / Give away**. Picking one previews a plain label with no number, QR code or room colour: big VINNIES or SELL / GIVE AWAY, with DO NOT LOAD across the bottom (and the contents, if typed in). **Create** adds it to **To print**, where it prints on the same sheets as the box labels, or print it there and then. They aren't boxes: no number is used and nothing is scanned or tracked (they're kept as `signs` in the database).
 
 **Reprinting:** type box numbers or ranges into **Reprint labels** at the bottom of To print (for example `12-17, 21`, or `T3` for a test label). They go back on the list and print like new ones. A box's card also has a **Reprint** button once its label has been printed.
 
@@ -81,7 +81,8 @@ npx wrangler d1 execute move --local --file=seed.sql
 | PATCH | `/api/boxes/:id` | `{cat?, dest?, status?, resetScan?}`. Before loading opens, a status past Packed is refused with 409 |
 | DELETE | `/api/boxes/:id` | The number is never reused |
 | POST | `/api/boxes/batch` | `{items: [{cat, dest}], test?}`. Up to 100 labels, consecutive numbers |
-| POST | `/api/boxes/printed` | `{ids, printed?}`. Marks labels printed; unprinted ones make up the To print list |
+| POST | `/api/boxes/printed` | `{ids, printed?}`. Marks labels printed; unprinted ones make up the To print list. Takes Not moving label ids (`n…`) too |
+| POST | `/api/signs` | `{kind: "vinnies" \| "sell", cat?}`. A Not moving label, added to To print |
 | DELETE | `/api/boxes?test=1` | Deletes every test label (T001…) and restarts test numbering |
 | POST | `/api/scan/:id` | Moves the box one step. Returns `moved`, `recent` (within 15 s), `held` (packed, before loading opens) or `done` |
 | POST | `/api/boxes/:id/photos` | Body is the image (JPEG, PNG or WebP, up to 1.5 MB). Returns `{pid, box}` |
