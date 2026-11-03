@@ -433,17 +433,29 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
   }
 
   const savoyRooms = () => Object.entries(rooms).map(([id, r]) => Object.assign({ id }, r)).filter((r) => r.list === "unpack" && r.kind !== "prep").sort((a, b) => (a.order || 0) - (b.order || 0));
-  // Not moving: listed at the bottom of "Goes to" as "!vinnies" and "!sell" ("!" can't start a room id).
+  // Plain labels with no number, listed at the bottom of "Goes to" as "!vinnies", "!sell" and "!fragile"
+  // ("!" can't start a room id). group is the heading they sit under there; count is how To print counts them.
+  const NOT_MOVING = { group: "Not moving", noun: "label", count: ["Not moving label", "Not moving labels"], top: "NOT MOVING", bar: "DO NOT LOAD", note: "Each one says DO NOT LOAD." };
   const SIGNS = {
-    vinnies: { name: "Vinnies", lines: ["VINNIES"], sub: "Donate to St Vincent de Paul" },
-    sell: { name: "Sell / Give away", lines: ["SELL /", "GIVE AWAY"], sub: "Not coming to Savoy" },
+    vinnies: { ...NOT_MOVING, name: "Vinnies", lines: ["VINNIES"], sub: "Donate to St Vincent de Paul" },
+    sell: { ...NOT_MOVING, name: "Sell / Give away", lines: ["SELL /", "GIVE AWAY"], sub: "Not coming to Savoy" },
+    fragile: { group: "Stickers", noun: "sticker", count: ["Fragile sticker", "Fragile stickers"], name: "Fragile", lines: ["FRAGILE"], glass: true, bar: "HANDLE WITH CARE",
+      note: "Stick them on any box that needs care, as well as its own numbered label." },
   };
   const signOf = () => { const v = $("#lbDest").value || ""; return v[0] === "!" && SIGNS[v.slice(1)] ? v.slice(1) : null; };
-  // Made Not moving labels wait on To print with the boxes until they're printed.
-  const pendingSigns = () => Object.entries(signs).map(([id, x]) => Object.assign({ id }, x)).filter((x) => !x.printedAt && SIGNS[x.kind]).sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
+  // Made plain labels wait on To print with the boxes until they're printed.
+  // Grouped by kind (Vinnies, Sell, Fragile), oldest first within each, so like labels print together.
+  const KIND_ORDER = Object.keys(SIGNS);
+  const pendingSigns = () => Object.entries(signs).map(([id, x]) => Object.assign({ id }, x)).filter((x) => !x.printedAt && SIGNS[x.kind])
+    .sort((a, b) => KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind) || String(a.createdAt).localeCompare(String(b.createdAt)));
   const labelItem = (id) => (id && (boxes[id] || signs[id])) || null;
-  // "3 boxes and 2 Not moving labels", for rows from the print list (a sign row has a kind).
-  const countText = (rows) => { const n = rows.filter((r) => r && r.kind).length, b = rows.length - n; return [b ? plural(b, "box", "boxes") : "", n ? plural(n, "Not moving label", "Not moving labels") : ""].filter(Boolean).join(" and ") || "Nothing"; };
+  // "3 boxes, 2 Not moving labels and 1 Fragile sticker", for rows from the print list (a plain label row has a kind).
+  const countText = (rows) => {
+    const by = new Map([["box", [0, ["box", "boxes"]]]].concat(Object.values(SIGNS).map((x) => [x.count[0], [0, x.count]])));
+    rows.forEach((r) => { if (!r) return; const pair = r.kind && SIGNS[r.kind] ? SIGNS[r.kind].count : ["box", "boxes"]; const e = by.get(pair[0]) || [0, pair]; e[0]++; by.set(pair[0], e); });
+    const parts = [...by.values()].filter(([n]) => n).map(([n, [one, many]]) => plural(n, one, many));
+    return parts.length ? parts.slice(0, -1).join(", ") + (parts.length > 1 ? " and " : "") + parts[parts.length - 1] : "Nothing";
+  };
   const roomName = (id) => (rooms[id] ? String(rooms[id].name) : "");
   const labelRoom = (id) => roomName(id).replace(/\s*\((check|TBC)\)\s*/i, "").trim();
   const hexOf = (c) => (c && /^#[0-9a-fA-F]{6}$/.test(c.hex || "") ? c.hex : "");
@@ -482,7 +494,7 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
       if (document.activeElement === sel) continue;
       const cur = sel.value;
       sel.innerHTML = `<option value="">Choose a room</option>` + savoyRooms().map((r) => `<option value="${esc(r.id)}">${esc(r.name)}</option>`).join("")
-        + (sel.id === "lbDest" ? `<optgroup label="Not moving">${Object.entries(SIGNS).map(([k, s]) => `<option value="!${k}">${esc(s.name)}</option>`).join("")}</optgroup>` : "");
+        + (sel.id === "lbDest" ? [...new Set(Object.values(SIGNS).map((x) => x.group))].map((g) => `<optgroup label="${esc(g)}">${Object.entries(SIGNS).filter(([, x]) => x.group === g).map(([k, x]) => `<option value="!${k}">${esc(x.name)}</option>`).join("")}</optgroup>`).join("") : "");
       if (cur && (rooms[cur] || (sel.id === "lbDest" && cur[0] === "!" && SIGNS[cur.slice(1)]))) sel.value = cur;
     }
     const cats = [...new Set(all.map((b) => b.cat).filter(Boolean).concat(DEFAULT_CATS))];
@@ -634,7 +646,7 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
       drawLabel($("#lbCanvas"), { n: nextOf(test ? tests() : list()), test, cat: $("#lbCat").value.trim(), dest: $("#lbDest").value }, true);
     }
     $("#lbTestRow").hidden = !!sign;
-    $("#lbCreate").textContent = sign ? `Create ${SIGNS[sign].name} label` : $("#lbTest").checked ? `Create test label T${pad3(nextOf(tests()))}` : `Create box ${pad3(nextOf(list()))}`;
+    $("#lbCreate").textContent = sign ? `Create ${SIGNS[sign].name} ${SIGNS[sign].noun}` : $("#lbTest").checked ? `Create test label T${pad3(nextOf(tests()))}` : `Create box ${pad3(nextOf(list()))}`;
     ["#lbPrint", "#lbShare", "#lbSave"].forEach((s) => ($(s).disabled = !cur && !made));
     $("#cpN").textContent = copies === 1 ? "1 side" : `${copies} sides`;
     $("#cpMinus").disabled = copies <= 1; $("#cpPlus").disabled = copies >= MAX_COPIES;
@@ -647,17 +659,34 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     $("#lbHint").textContent = cur
       ? `Box ${tag(cur)} is ready${cur.printedAt ? "" : " and waiting in To print"}.${copies > 1 ? ` Stick one on each of ${copies} sides; every copy scans as the same box.` : ""} Change the fields to start the next one.`
       : made
-      ? `${SIGNS[made.kind].name} label is ready${made.printedAt ? "" : " and waiting in To print"}.${copies > 1 ? ` It prints ${copies} copies, one for each side.` : ""} Change the fields to start the next one.`
+      ? `${SIGNS[made.kind].name} ${SIGNS[made.kind].noun} is ready${made.printedAt ? "" : " and waiting in To print"}.${copies > 1 ? ` It prints ${copies} copies, one for each side.` : ""} Change the fields to start the next one.`
       : sign
-      ? `${SIGNS[sign].name} labels have no number or QR code and aren't scanned. Creating one adds it to To print with the box labels. Each one says DO NOT LOAD.`
+      ? `${SIGNS[sign].name} ${SIGNS[sign].noun}s have no number or QR code and aren't scanned. Creating one adds it to To print with the box labels. ${SIGNS[sign].note}`
       : "Numbers come from one shared counter, so two people can never get the same one.";
     if (loaded) renderQueue();
   }
 
   // ---------- Printing: one routine for a single box or the whole queue ----------
   // 4x6 and small sizes print one label per page; A4 lays labels 2 x 2 on Avery L7169 sheets.
-  // ---------- Not moving: plain Vinnies and Sell / Give away labels (no number, QR or room) ----------
-  // Listed under "Not moving" at the bottom of Goes to. "What's in it", if filled in, replaces the small line.
+  // ---------- Plain labels: Not moving (Vinnies, Sell / Give away) and Fragile stickers ----------
+  // No number, QR or room. Listed at the bottom of Goes to. "What's in it", if filled in, replaces the small line.
+  // The fragile symbol: a stemmed glass with a crack, drawn into the box x, y, w, h.
+  function drawGlass(c, x, y, w, h, ink) {
+    const gw = Math.min(w, h * 0.62), cx = x + w / 2, top = y + h * 0.02;
+    const bowlH = h * 0.46, stemH = h * 0.34, baseH = Math.max(3, h * 0.07), half = gw / 2;
+    c.fillStyle = ink; c.beginPath();
+    c.moveTo(cx - half, top); c.lineTo(cx + half, top);
+    c.bezierCurveTo(cx + half, top + bowlH * 0.75, cx + half * 0.45, top + bowlH, cx, top + bowlH);
+    c.bezierCurveTo(cx - half * 0.45, top + bowlH, cx - half, top + bowlH * 0.75, cx - half, top);
+    c.fill();
+    const sw = Math.max(3, gw * 0.09);
+    c.fillRect(cx - sw / 2, top + bowlH - 1, sw, stemH + 2);
+    c.fillRect(cx - half * 0.62, top + bowlH + stemH, half * 1.24, baseH);
+    // the crack, in white across the bowl
+    c.strokeStyle = "#FFFFFF"; c.lineWidth = Math.max(2, gw * 0.045); c.lineJoin = "miter"; c.beginPath();
+    c.moveTo(cx - half * 0.25, top); c.lineTo(cx + half * 0.12, top + bowlH * 0.3); c.lineTo(cx - half * 0.18, top + bowlH * 0.5); c.lineTo(cx + half * 0.15, top + bowlH * 0.82);
+    c.stroke(); c.strokeStyle = ink;
+  }
   function drawSign(cv, kind, what, ghost) {
     const s = SIGNS[kind], [wmm, hmm] = SIZES[size];
     const W = wmm * 8, H = hmm * 8, portrait = H > W, m = Math.min(W, H);
@@ -670,22 +699,33 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     const barH = Math.round(portrait ? W * 0.2 : H * 0.28), inner = W - 2 * pad;
     c.lineWidth = bw; c.strokeRect(bw / 2, bw / 2, W - bw, H - bw);
     let y = pad;
-    const fsT = fitFont(c, "NOT MOVING", inner, m * (portrait ? 0.09 : 0.13));
-    c.fillText("NOT MOVING", pad, y); y += Math.round(fsT * 1.35);
-    const sub = what ? String(what).toUpperCase() : s.sub;
-    const fsS = portrait ? fitFont(c, sub, inner, m * 0.07) : what ? fitFont(c, sub, inner, m * 0.1) : 0;
+    if (s.top) { const fsT = fitFont(c, s.top, inner, m * (portrait ? 0.09 : 0.13)); c.fillText(s.top, pad, y); y += Math.round(fsT * 1.35); }
+    const sub = what ? String(what).toUpperCase() : s.sub || "";
+    const fsS = sub && (portrait || what) ? fitFont(c, sub, inner, m * (portrait ? 0.07 : 0.1)) : 0;
     const bottom = H - barH - Math.round(pad * 0.6) - (fsS ? Math.round(fsS * 1.6) : 0);
-    // The big words: as large as fits across and down, the same size for every line.
-    const fsB = Math.min(...s.lines.map((l) => fitFont(c, l, inner, (bottom - y) / (s.lines.length * 1.05))));
-    c.font = `700 ${fsB}px ${LFONT}`;
-    const block = fsB * 1.05 * s.lines.length;
-    let ly = y + Math.max(0, Math.round((bottom - y - block) / 2));
-    s.lines.forEach((l) => { c.fillText(l, pad, ly); ly += Math.round(fsB * 1.05); });
-    if (fsS) { c.font = `700 ${fsS}px ${LFONT}`; c.fillText(sub, pad, bottom + Math.round(fsS * 0.3)); }
-    c.fillRect(0, H - barH, W, barH);
+    // The big words: the same size for every line. With a symbol, it takes the rest of the space
+    // (below the words on a tall label, beside them on a wide one).
+    const words = (maxW, maxH) => Math.min(...s.lines.map((l) => fitFont(c, l, maxW, maxH / (s.lines.length * 1.05))));
+    const putWords = (fs, x, from, to) => {
+      c.fillStyle = ink; c.font = `700 ${fs}px ${LFONT}`;
+      let ly = from + Math.max(0, Math.round((to - from - fs * 1.05 * s.lines.length) / 2));
+      s.lines.forEach((l) => { c.fillText(l, x, ly); ly += Math.round(fs * 1.05); });
+    };
+    if (s.glass && portrait) {
+      const fsB = words(inner, (bottom - y) * 0.36), wordsH = Math.round(fsB * 1.05 * s.lines.length);
+      putWords(fsB, pad, y, y + wordsH);
+      const gy = y + wordsH + Math.round(pad * 0.6);
+      drawGlass(c, pad, gy, inner, bottom - gy - Math.round(pad * 0.3), ink);
+    } else if (s.glass) {
+      const gh = bottom - y, gw = Math.min(Math.round(gh * 0.62), Math.round(inner * 0.3));
+      drawGlass(c, W - pad - gw, y, gw, gh, ink);
+      putWords(words(inner - gw - Math.round(pad * 0.6), bottom - y), pad, y, bottom);
+    } else putWords(words(inner, bottom - y), pad, y, bottom);
+    if (fsS) { c.fillStyle = ink; c.font = `700 ${fsS}px ${LFONT}`; c.fillText(sub, pad, bottom + Math.round(fsS * 0.3)); }
+    c.fillStyle = ink; c.fillRect(0, H - barH, W, barH);
     c.fillStyle = "#FFFFFF";
-    const fsD = fitFont(c, "DO NOT LOAD", W - 2 * pad, barH * (portrait ? 0.62 : 0.7));
-    c.fillText("DO NOT LOAD", pad, H - barH + Math.round((barH - fsD) / 2));
+    const fsD = fitFont(c, s.bar, W - 2 * pad, barH * (portrait ? 0.62 : 0.7));
+    c.fillText(s.bar, pad, H - barH + Math.round((barH - fsD) / 2));
   }
 
   function printIds(ids) {
@@ -754,7 +794,7 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
       : `${countText(q)} waiting${sel.length < q.length ? `, ${sel.length} ticked` : ""}. At ${esc(sizeName)} and ${plural(copies, "side", "sides")} that's ${plural(labels, "label", "labels")}${sheets ? ` on ${plural(sheets, "sheet", "sheets")}${spare ? `, with ${plural(spare, "spot", "spots")} left empty on the last one` : ""}` : ""}.`;
     $("#qList").innerHTML = q.map((b) => {
       const off = qOff.has(b.id);
-      if (b.kind) return `<li><label class="${off ? "is-off" : ""}"><input type="checkbox" data-q="${esc(b.id)}" ${off ? "" : "checked"}><b class="q-sign">${esc(SIGNS[b.kind].name)}</b><span>${esc(b.cat || "Not moving")}</span></label></li>`;
+      if (b.kind) return `<li><label class="${off ? "is-off" : ""}"><input type="checkbox" data-q="${esc(b.id)}" ${off ? "" : "checked"}><b class="q-sign">${esc(SIGNS[b.kind].name)}</b><span>${esc(b.cat || (SIGNS[b.kind].group === "Stickers" ? "Sticker" : SIGNS[b.kind].group))}</span></label></li>`;
       const r = rooms[b.dest];
       return `<li><label class="${off ? "is-off" : ""}" style="--sw:${r ? hexOf(r.colour) || "var(--line)" : "var(--line)"}"><input type="checkbox" data-q="${esc(b.id)}" ${off ? "" : "checked"}><b>${tag(b)}</b><span>${esc(b.cat || (r ? r.name : ""))}</span></label></li>`;
     }).join("");
@@ -918,10 +958,10 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     const cat = $("#lbCat").value.trim(), dest = $("#lbDest").value || null, kind = signOf();
     const btn = $("#lbCreate"); btn.disabled = true;
     try {
-      if (kind) { // Not moving: no box and no number, just a label waiting on To print
+      if (kind) { // A plain label (Not moving or Fragile): no box and no number, just a label waiting on To print
         const r = await api("/api/signs", { method: "POST", body: JSON.stringify({ kind, cat }) });
         signs[r.id] = r.sign; current = r.id;
-        toast(`${SIGNS[kind].name} label added to To print`);
+        toast(`${SIGNS[kind].name} ${SIGNS[kind].noun} added to To print`);
         render(); refresh(); return;
       }
       const r = await api("/api/boxes", { method: "POST", body: JSON.stringify({ cat, dest, test: $("#lbTest").checked }) });
@@ -968,7 +1008,7 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     const blob = await new Promise((res) => stripCanvas().toBlob(res, "image/png"));
     return blob ? new File([blob], base + ".png", { type: "image/png" }) : null;
   }
-  // The box or Not moving label just made (or picked from a box's card).
+  // The box or plain label just made (or picked from a box's card).
   const shownId = () => (labelItem(current) ? current : null);
   $("#lbPrint").addEventListener("click", () => {
     const id = shownId(); if (!id) return;

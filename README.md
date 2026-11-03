@@ -39,6 +39,8 @@ Until step 3 is done, `/api/lists/*` returns 403. The account and policy numbers
 
 **Not moving:** at the bottom of **Goes to** on New box label, under Not moving, are **Vinnies** and **Sell / Give away**. Picking one previews a plain label with no number, QR code or room colour: big VINNIES or SELL / GIVE AWAY, with DO NOT LOAD across the bottom (and the contents, if typed in). **Create** adds it to **To print**, where it prints on the same sheets as the box labels, or print it there and then. They aren't boxes: no number is used and nothing is scanned or tracked (they're kept as `signs` in the database).
 
+**Fragile stickers:** **Fragile** sits under Stickers at the bottom of **Goes to**. It works the same way (no number or QR code, Create adds it to To print, it prints with the box labels) but it isn't a Not moving label: it has a big FRAGILE with a cracked-glass symbol and HANDLE WITH CARE across the bottom, for sticking on a box alongside its own numbered label.
+
 **Reprinting:** type box numbers or ranges into **Reprint labels** at the bottom of To print (for example `12-17, 21`, or `T3` for a test label). They go back on the list and print like new ones. A box's card also has a **Reprint** button once its label has been printed.
 
 **To print:** every new label waits there until it's printed. Each one has a tick box, so you can hold some back. On A4, **Full sheets only** prints just enough boxes to fill whole sheets and keeps the odd ones for next time, because half-used label sheets shouldn't go back through a laser. The list is shared, so labels made on a phone can be printed from the Mac. Print all uses the size and sides chosen in New box label. Once you confirm the labels printed OK, they come off the list. Scanning a label's QR code (phone camera or the in-app scanner) also takes it off, since the label clearly exists; typing a box number doesn't. Printing a single box with its own Print button takes it off the list straight away.
@@ -82,7 +84,7 @@ npx wrangler d1 execute move --local --file=seed.sql
 | DELETE | `/api/boxes/:id` | The number is never reused |
 | POST | `/api/boxes/batch` | `{items: [{cat, dest}], test?}`. Up to 100 labels, consecutive numbers |
 | POST | `/api/boxes/printed` | `{ids, printed?}`. Marks labels printed; unprinted ones make up the To print list. Takes Not moving label ids (`n…`) too |
-| POST | `/api/signs` | `{kind: "vinnies" \| "sell", cat?}`. A Not moving label, added to To print |
+| POST | `/api/signs` | `{kind: "vinnies" \| "sell" \| "fragile", cat?}`. A Not moving label or Fragile sticker, added to To print |
 | DELETE | `/api/boxes?test=1` | Deletes every test label (T001…) and restarts test numbering |
 | POST | `/api/scan/:id` | Moves the box one step. Returns `moved`, `recent` (within 15 s), `held` (packed, before loading opens) or `done` |
 | POST | `/api/boxes/:id/photos` | Body is the image (JPEG, PNG or WebP, up to 1.5 MB). Returns `{pid, box}` |

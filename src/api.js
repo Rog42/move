@@ -5,7 +5,7 @@
 //   POST   /api/boxes                 create the next numbered box {cat, dest, test?}
 //   POST   /api/boxes/batch           create many {items: [{cat, dest}], test?}, consecutive numbers
 //   POST   /api/boxes/printed         mark labels printed {ids, printed?} (unprinted = To print list); takes sign ids too
-//   POST   /api/signs                 a Not moving label {kind: "vinnies" | "sell", cat?}: no number or QR, just goes on To print
+//   POST   /api/signs                 a plain label {kind: "vinnies" | "sell" | "fragile", cat?}: no number or QR, just goes on To print
 //   PATCH  /api/boxes/:id             change cat / dest / status
 //   DELETE /api/boxes/:id             remove a box (its number is never reused)
 //   DELETE /api/boxes?test=1          remove every test label (T001...) and restart test numbering
@@ -50,8 +50,8 @@ function cleanPrintSettings(body) {
   }
   return out;
 }
-// Not moving labels (Vinnies, Sell / Give away). Ids start with "n", so they never clash with boxes (b001, t001).
-const SIGN_KINDS = new Set(["vinnies", "sell"]);
+// Plain labels: Not moving (Vinnies, Sell / Give away) and Fragile stickers. Ids start with "n", so they never clash with boxes (b001, t001).
+const SIGN_KINDS = new Set(["vinnies", "sell", "fragile"]);
 const labelCol = (id) => (id[0] === "n" ? "signs" : "boxes");
 const LIST_COLS = new Set(["items", "meta"]);
 const ID_RE = /^[A-Za-z0-9_\-.~:@+]{1,120}$/;
@@ -230,10 +230,10 @@ export async function handleApi(request, env, parts) {
       return json({ ids, printedAt: at });
     }
 
-    // A Not moving label: no number, nothing to scan. It waits on To print like a box label.
+    // A plain label (Not moving or Fragile): no number, nothing to scan. It waits on To print like a box label.
     if (parts[0] === "signs" && parts.length === 1 && method === "POST") {
       const body = await readBody(request);
-      if (!body || !SIGN_KINDS.has(body.kind)) return fail(400, "Say which label: vinnies or sell.");
+      if (!body || !SIGN_KINDS.has(body.kind)) return fail(400, "Say which label: vinnies, sell or fragile.");
       const id = "n" + crypto.randomUUID().replace(/-/g, "").slice(0, 12);
       const sign = { kind: body.kind, cat: typeof body.cat === "string" ? body.cat.trim().slice(0, 40) : "", createdAt: new Date().toISOString() };
       await putDoc(DB, "signs", id, sign);
