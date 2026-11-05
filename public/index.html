@@ -159,9 +159,11 @@ ul.boxes li.brow .box { flex: 1; min-width: 0; padding-left: 6px; border-top: 0;
 .tick input { width: 20px; height: 20px; margin: 0; accent-color: var(--accent); }
 li.tickall { padding: 8px 12px; background: var(--bg); }
 .tickbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 55; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px max(16px, env(safe-area-inset-left, 0px)) calc(12px + env(safe-area-inset-bottom, 0px)); background: var(--surface); border-top: 1px solid var(--line); box-shadow: 0 -4px 18px rgba(0,0,0,.08); }
-.tickbar span { flex: 1 1 140px; font-size: 14px; }
-body.has-tickbar { padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px)); }
-body.has-tickbar .toast { bottom: calc(84px + env(safe-area-inset-bottom, 0px)); }
+.tickbar span { flex: 1 1 100%; font-size: 14px; }
+.tickto { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; flex: 1 1 auto; }
+.tickto select { flex: 1; min-width: 0; width: auto; }
+body.has-tickbar { padding-bottom: calc(150px + env(safe-area-inset-bottom, 0px)); }
+body.has-tickbar .toast { bottom: calc(136px + env(safe-area-inset-bottom, 0px)); }
 .box:hover { background: color-mix(in srgb, var(--accent-soft) 50%, transparent); }
 .box.is-hot { background: var(--accent-soft); }
 .bn { font-family: var(--f-mono); font-weight: 500; font-variant-numeric: tabular-nums; }
@@ -384,7 +386,7 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
 </dialog>
 
 <div id="printArea"></div>
-<div class="tickbar" id="tickBar" hidden><span id="tickText"></span><button class="btn btn-primary" type="button" id="tickPack">Mark packed</button><button class="btn" type="button" id="tickUndo" hidden>Undo</button><button class="linkbtn" type="button" id="tickClear">Clear</button></div>
+<div class="tickbar" id="tickBar" hidden><span id="tickText"></span><label class="tickto" id="tickToRow">Move to <select id="tickTo"></select></label><button class="btn btn-primary" type="button" id="tickGo">Move</button><button class="btn" type="button" id="tickUndo" hidden>Undo</button><button class="linkbtn" type="button" id="tickClear">Clear</button></div>
 <div class="toast" id="toast" hidden></div>
 
 <script src="/vendor/qrcode-generator-1.4.4.js"></script>
@@ -529,59 +531,82 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     $("#filters").innerHTML = opts.map(([k, l]) => `<button class="chip" type="button" data-filter="${k}" aria-pressed="${filter === k}">${l}</button>`).join("");
   }
   const rowHTML = (b) => { const st = statusOf(b); return `<li class="brow"><label class="tick"><input type="checkbox" data-tick="${esc(b.id)}" aria-label="Tick ${tag(b)}" ${ticked.has(b.id) ? "checked" : ""}></label><button class="box ${b.id === hot ? "is-hot" : ""}" type="button" data-box="${esc(b.id)}"><span class="bn">${tag(b)}</span>${hasContents(b) ? `<span class="bc">${esc(whatText(b))}</span>` : `<span class="bc is-empty">Contents to add</span>`}<span class="st st-${st}">${STEP_NAME[st]}</span></button></li>`; };
-  // ---------- Ticking boxes to pack several at once ----------
+  // ---------- Ticked boxes: move several to a stage at once ----------
+  // Tick boxes in All boxes (or Tick all in a room), pick a stage in the bar at the bottom, and Move.
+  // The bar suggests the next stage for the least-advanced ticked box (Packed while any aren't packed).
+  // Each box is only changed if it's still where this phone last saw it ({from}), so a scan elsewhere isn't undone.
   const ticked = new Set();
-  let tickBusy = false, lastPack = null, lastPackT;
+  const STEP_KEYS = STEPS.map(([k]) => k), PACKED_AT = STEP_KEYS.indexOf("packed");
+  let tickBusy = false, lastMove = null, lastMoveT, tickToPicked = false;
+  $("#tickTo").innerHTML = STEPS.map(([k, l]) => `<option value="${k}">${l}</option>`).join("");
   const toPack = (rows) => rows.filter((b) => statusOf(b) === "labelled");
+  // Before loading opens for its room, a box can't go forward past Packed (the server refuses it too).
+  const heldFor = (b, to) => STEP_KEYS.indexOf(to) > PACKED_AT && STEP_KEYS.indexOf(to) > STEP_KEYS.indexOf(statusOf(b)) && lockedFor(b);
   function tickAllHTML(rows) {
-    const todo = toPack(rows); if (!todo.length) return "";
-    const all = todo.every((b) => ticked.has(b.id));
-    return `<li class="tickall"><button class="linkbtn" type="button" data-tickids="${esc(todo.map((b) => b.id).join(","))}">${all ? "Untick all" : `Tick all ${todo.length} not packed`}</button></li>`;
+    if (!rows.length) return "";
+    const todo = toPack(rows);
+    const link = (list, on, off) => `<button class="linkbtn" type="button" data-tickids="${esc(list.map((b) => b.id).join(","))}">${list.every((b) => ticked.has(b.id)) ? off : on}</button>`;
+    return `<li class="tickall">${link(rows, `Tick all ${rows.length}`, "Untick all")}${todo.length && todo.length < rows.length ? ` · ${link(todo, `Tick the ${todo.length} not packed`, `Untick the ${todo.length} not packed`)}` : ""}</li>`;
+  }
+  function suggestTo() {
+    const lo = Math.min(...[...ticked].map((id) => STEP_KEYS.indexOf(statusOf(boxes[id]))));
+    return STEP_KEYS[Math.min(lo + 1, STEP_KEYS.length - 1)];
   }
   function renderTickBar() {
     [...ticked].forEach((id) => { if (!boxes[id]) ticked.delete(id); });
-    const n = ticked.size, pack = [...ticked].filter((id) => statusOf(boxes[id]) === "labelled").length;
-    const show = n > 0 || !!lastPack;
+    const n = ticked.size, show = n > 0 || !!lastMove;
     $("#tickBar").hidden = !show; document.body.classList.toggle("has-tickbar", show);
     if (!show) return;
-    const undoing = !n && lastPack;
-    $("#tickPack").hidden = !!undoing; $("#tickUndo").hidden = !undoing; $("#tickClear").textContent = undoing ? "Done" : "Clear";
-    if (undoing) { $("#tickText").textContent = `Packed ${plural(lastPack.length, "box", "boxes")}.`; return; }
-    $("#tickText").textContent = `${n} ticked${pack < n ? ` (${n - pack} already packed or further, left as they are)` : ""}`;
-    $("#tickPack").textContent = pack ? `Mark ${pack} packed` : "Mark packed";
-    $("#tickPack").disabled = !pack || tickBusy;
+    const undoing = !n && lastMove;
+    $("#tickToRow").hidden = $("#tickGo").hidden = !!undoing; $("#tickUndo").hidden = !undoing; $("#tickClear").textContent = undoing ? "Done" : "Clear";
+    if (undoing) { $("#tickText").textContent = `Moved ${plural(lastMove.done.length, "box", "boxes")} to ${STEP_NAME[lastMove.to]}.`; return; }
+    if (!tickToPicked && document.activeElement !== $("#tickTo")) $("#tickTo").value = suggestTo();
+    const to = $("#tickTo").value, rows = [...ticked].map((id) => boxes[id]);
+    const there = rows.filter((b) => statusOf(b) === to).length, held = rows.filter((b) => heldFor(b, to));
+    const go = n - there - held.length;
+    const notes = [there ? `${there} already ${STEP_NAME[to]}` : "", held.length ? `${held.length} can't go past Packed until ${loadingText(Math.min(...held.map(lockAt)))}` : ""].filter(Boolean);
+    $("#tickText").textContent = `${n} ticked${notes.length ? ` (${notes.join("; ")})` : ""}`;
+    $("#tickGo").textContent = go ? `Move ${go}` : "Move";
+    $("#tickGo").disabled = !go || tickBusy;
   }
-  // Moves each box only if it's still where this phone last saw it ({from}), so a scan elsewhere isn't undone.
-  async function setStages(ids, from, to) {
+  // list: [{id, from, to}]. Returns which went through and which didn't (with the server's reason).
+  async function setStages(list) {
     const done = [], failed = [];
-    await Promise.all(ids.map(async (id) => {
-      try { const r = await api("/api/boxes/" + id, { method: "PATCH", body: JSON.stringify({ status: to, from, resetScan: true }) }); boxes[id] = r.box; done.push(id); }
-      catch (e) { failed.push(id); }
+    await Promise.all(list.map(async (m) => {
+      try { const r = await api("/api/boxes/" + m.id, { method: "PATCH", body: JSON.stringify({ status: m.to, from: m.from, resetScan: true }) }); boxes[m.id] = r.box; done.push(m); }
+      catch (e) { failed.push(Object.assign({ error: e.message }, m)); }
     }));
     return { done, failed };
   }
-  $("#tickPack").addEventListener("click", async () => {
-    const ids = [...ticked].filter((id) => boxes[id] && statusOf(boxes[id]) === "labelled");
-    if (!ids.length || tickBusy) return;
+  const failText = (failed) => `${plural(failed.length, "box", "boxes")} didn't move (${failed.map((m) => tag(boxes[m.id] || {})).join(", ")}): ${failed[0].error}`;
+  $("#tickTo").addEventListener("change", () => { tickToPicked = true; renderTickBar(); });
+  $("#tickGo").addEventListener("click", async () => {
+    const to = $("#tickTo").value;
+    const list = [...ticked].filter((id) => boxes[id] && statusOf(boxes[id]) !== to && !heldFor(boxes[id], to)).map((id) => ({ id, from: statusOf(boxes[id]), to }));
+    if (!list.length || tickBusy) return;
+    const held = [...ticked].filter((id) => boxes[id] && heldFor(boxes[id], to)).length;
     tickBusy = true; renderTickBar();
-    const { done, failed } = await setStages(ids, "labelled", "packed");
-    tickBusy = false; ticked.clear();
-    lastPack = done.length ? done : null; clearTimeout(lastPackT);
-    if (lastPack) lastPackT = setTimeout(() => { lastPack = null; renderTickBar(); }, 15000);
-    if (failed.length) toast(`${plural(failed.length, "box", "boxes")} couldn't be packed (changed on another phone?). Check ${failed.map((id) => tag(boxes[id] || {})).join(", ")}.`);
+    const { done, failed } = await setStages(list);
+    tickBusy = false; ticked.clear(); tickToPicked = false;
+    lastMove = done.length ? { to, done } : null; clearTimeout(lastMoveT);
+    if (lastMove) lastMoveT = setTimeout(() => { lastMove = null; renderTickBar(); }, 15000);
+    if (failed.length) toast(failText(failed));
+    else if (held) toast(`${plural(held, "box", "boxes")} left at Packed until loading opens.`);
     render(); refresh();
   });
   $("#tickUndo").addEventListener("click", async () => {
-    const ids = lastPack || []; lastPack = null; clearTimeout(lastPackT); renderTickBar();
-    const { done, failed } = await setStages(ids, "packed", "labelled");
-    toast(`${plural(done.length, "box", "boxes")} back to Labelled.${failed.length ? ` ${failed.length} had already moved on, so left as they are.` : ""}`);
+    const m = lastMove; lastMove = null; clearTimeout(lastMoveT); renderTickBar();
+    if (!m) return;
+    const { done, failed } = await setStages(m.done.map((x) => ({ id: x.id, from: x.to, to: x.from })));
+    toast(failed.length ? `${plural(done.length, "box", "boxes")} moved back. ${failText(failed)}` : `${plural(done.length, "box", "boxes")} moved back.`);
     render(); refresh();
   });
-  $("#tickClear").addEventListener("click", () => { ticked.clear(); lastPack = null; clearTimeout(lastPackT); renderRegister(); renderTickBar(); });
+  $("#tickClear").addEventListener("click", () => { ticked.clear(); tickToPicked = false; lastMove = null; clearTimeout(lastMoveT); renderRegister(); renderTickBar(); });
   $("#register").addEventListener("change", (e) => {
     const c = e.target.closest("[data-tick]"); if (!c) return;
     if (c.checked) ticked.add(c.dataset.tick); else ticked.delete(c.dataset.tick);
-    lastPack = null; renderRegister(); renderTickBar();
+    if (!ticked.size) tickToPicked = false;
+    lastMove = null; renderRegister(); renderTickBar();
   });
 
   function renderRegister() {
@@ -1338,7 +1363,8 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
       const ids = g.dataset.tickids.split(",").filter((id) => boxes[id]);
       const all = ids.every((id) => ticked.has(id));
       ids.forEach((id) => (all ? ticked.delete(id) : ticked.add(id)));
-      lastPack = null; renderRegister(); renderTickBar(); return;
+      if (!ticked.size) tickToPicked = false;
+      lastMove = null; renderRegister(); renderTickBar(); return;
     }
     const f = e.target.closest("[data-fold]");
     if (f) {
