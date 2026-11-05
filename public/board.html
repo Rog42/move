@@ -340,22 +340,24 @@ body.is-dragging, body.is-dragging * { cursor: grabbing !important; }
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") { if (drag) stopDrag(false); closeMenu(); } });
 
   // Tap a card: Move to menu.
-  let menuId = null;
+  // The stage the menu was opened on is what gets sent as {from}, so if another phone moves the box
+  // while the menu is open, the server refuses instead of undoing that move.
+  let menuId = null, menuFrom = null;
   function openMenu(id) {
     const b = boxes[id]; if (!b) return;
-    menuId = id; const here = statusOf(b);
+    const here = statusOf(b); menuId = id; menuFrom = here;
     $("#menuT").textContent = `Move ${tagOf(b)}${b.cat ? " · " + b.cat : ""} to`;
     $("#menuOpts").innerHTML = COLS.map(([k, l]) => `<button type="button" data-to="${k}" ${k === here ? "disabled" : ""}><i class="b-${k}"></i>${l}${k === here ? " (now)" : ""}</button>`).join("");
     $("#menu").hidden = false;
   }
-  function closeMenu() { $("#menu").hidden = true; menuId = null; }
+  function closeMenu() { $("#menu").hidden = true; menuId = null; menuFrom = null; }
   board.addEventListener("click", (e) => {
     const c = e.target.closest(".card[data-id]"); if (!c || Date.now() - droppedAt < 400) return;
     openMenu(c.dataset.id);
   });
   $("#menuOpts").addEventListener("click", (e) => {
     const b = e.target.closest("[data-to]"); if (!b || !menuId || !boxes[menuId]) return;
-    const id = menuId; closeMenu(); moveBox(id, statusOf(boxes[id]), b.dataset.to);
+    const id = menuId, from = menuFrom; closeMenu(); moveBox(id, from, b.dataset.to);
   });
   $("#menuX").addEventListener("click", closeMenu);
   document.addEventListener("click", (e) => { if (!$("#menu").hidden && !e.target.closest("#menu") && !e.target.closest(".card")) closeMenu(); });

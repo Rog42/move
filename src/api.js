@@ -28,6 +28,7 @@ import { listsAccess } from "./access.js";
 
 const STEPS = ["labelled", "packed", "loaded", "inroom", "unpacked"];
 const PACKED = STEPS.indexOf("packed");
+const STEP_NAMES = { labelled: "Labelled", packed: "Packed", loaded: "Loaded", inroom: "In room", unpacked: "Unpacked" };
 const SCAN_GUARD_MS = 15000;
 // Nothing is loaded before the truck: Fri 6 Nov 2026, 5pm Sydney time. LOAD_FROM in wrangler.toml can move it.
 const LOAD_FROM_DEFAULT = "2026-11-06T17:00:00+11:00";
@@ -310,7 +311,7 @@ export async function handleApi(request, env, parts) {
           // {from: "labelled"} (ticked packing, board drags): only change it if it's still where the sender saw it,
           // so a scan from another phone in the meantime isn't undone.
           if (typeof body.from === "string" && STEPS.includes(body.from) && statusOf(doc.data) !== body.from)
-            return json({ error: `Box ${id.toUpperCase().replace(/^B/, "")} has just moved to ${statusOf(doc.data)} on another phone.`, moved: true, box: doc.data }, 409);
+            return json({ error: `Box ${id.toUpperCase().replace(/^B/, "")} has just moved to ${STEP_NAMES[statusOf(doc.data)]} on another phone.`, moved: true, box: doc.data }, 409);
           // Until loading opens for its room, a box can't be moved forward past Packed (moving back is fine).
           if (f.status && STEPS.indexOf(f.status) > PACKED && STEPS.indexOf(f.status) > STEPS.indexOf(statusOf(doc.data))) {
             const at = await boxLoadFrom(DB, env, { ...doc.data, ...f });
