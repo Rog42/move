@@ -13,7 +13,8 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap">
 <style>
-/* Wall display: totals, a strip of room tiles (% full), then four kanban columns of single-row cards */
+/* Wall display: totals, a strip of room tiles (% full), then five kanban columns of single-row cards.
+   Cards can be dragged to another column (long-press first on touch), or tapped for a Move to menu. */
 :root {
   --bg: #F1F4F2; --surface: #FFFFFF; --ink: #17201C; --muted: #586560; --line: #D7DED9;
   --accent: #0D6A56; --accent-soft: #DEEEE8; --on-accent: #FFFFFF;
@@ -30,6 +31,7 @@
     --s-packed: #EDB441; --s-loaded: #3E8F7C; --s-inroom: #4CC1A2; --s-unpacked: #E3E9E5; color-scheme: dark; }
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html, body { height: 100%; }
 body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.4 var(--f-body); -webkit-font-smoothing: antialiased; display: flex; flex-direction: column; padding: max(12px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(10px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); gap: 10px; }
 h1, h2, h3 { margin: 0; }
@@ -53,7 +55,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 
 .bar { display: flex; height: 8px; border-radius: 99px; overflow: hidden; background: var(--line); }
 .bar i { display: block; height: 100%; }
-.b-packed { background: var(--s-packed); } .b-loaded { background: var(--s-loaded); } .b-inroom { background: var(--s-inroom); } .b-unpacked { background: var(--s-unpacked); }
+.b-labelled { background: var(--muted); } .b-packed { background: var(--s-packed); } .b-loaded { background: var(--s-loaded); } .b-inroom { background: var(--s-inroom); } .b-unpacked { background: var(--s-unpacked); }
 
 .rooms { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
 .room { background: var(--surface); border: 1px solid var(--line); border-top: 5px solid var(--sw, var(--line)); border-radius: 10px; padding: 7px 10px 8px; display: grid; grid-template-columns: 1fr auto; gap: 0 8px; align-items: baseline; }
@@ -63,8 +65,9 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .room .mini { grid-column: 1 / -1; margin-top: 6px; height: 5px; }
 .room.is-full .pct { color: var(--accent); }
 
-.board { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
-@media (max-width: 900px) { .board { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.board { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
+@media (max-width: 1100px) { .board { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 760px) { .board { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 560px) { .board { grid-template-columns: 1fr; } }
 .col { position: relative; display: flex; flex-direction: column; min-height: 220px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
 .col-head { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--line); }
@@ -86,6 +89,21 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .card .what.is-empty { color: var(--muted); font-weight: 500; font-style: italic; }
 .card .rm { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card.is-new { background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); }
+.card { cursor: grab; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.card.is-lifted { opacity: .35; }
+.card.ghost { position: fixed; left: 0; top: 0; z-index: 80; pointer-events: none; margin: 0; cursor: grabbing; box-shadow: 0 10px 30px rgba(0,0,0,.28); transform-origin: 0 0; }
+body.is-dragging, body.is-dragging * { cursor: grabbing !important; }
+.col.is-target { border-color: var(--accent); box-shadow: inset 0 0 0 2px var(--accent); }
+.col.is-target .col-body { background: var(--accent-soft); }
+.menu { position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 90; width: min(380px, calc(100% - 32px)); background: var(--surface); border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 12px 40px rgba(0,0,0,.25); padding: 14px; display: flex; flex-direction: column; gap: 8px; }
+.menu b { font-size: 15px; }
+.menu .opts { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.menu .opts button { border: 1px solid var(--line); border-radius: 10px; background: var(--bg); padding: 10px; font-weight: 600; font-size: 14px; display: flex; align-items: center; gap: 8px; }
+.menu .opts button i { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+.menu .opts button:disabled { opacity: .5; cursor: default; }
+.menu .x { border: 0; background: none; color: var(--muted); font-weight: 600; padding: 6px; }
+.say { position: fixed; left: 50%; top: calc(14px + env(safe-area-inset-top, 0px)); transform: translateX(-50%); z-index: 95; max-width: calc(100% - 32px); background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 10px; font-size: 14px; font-weight: 600; box-shadow: 0 6px 20px rgba(0,0,0,.2); }
+.say.bad { background: #B3261E; color: #FFFFFF; }
 
 .foot { display: flex; justify-content: space-between; gap: 12px; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
 .foot .bad { color: #B3261E; font-weight: 600; }
@@ -110,15 +128,19 @@ button { font: inherit; color: inherit; cursor: pointer; }
 
 <main class="board" id="board"></main>
 
-<footer class="foot"><span id="updated">Connecting…</span><span id="wake"></span></footer>
+<footer class="foot"><span id="updated">Connecting…</span><span>Drag a card to another column (on a touch screen, hold it first), or tap it to move it.</span><span id="wake"></span></footer>
+<div class="menu" id="menu" role="dialog" aria-labelledby="menuT" hidden><b id="menuT"></b><div class="opts" id="menuOpts"></div><button class="x" type="button" id="menuX">Cancel</button></div>
+<div class="say" id="say" role="status" hidden></div>
 
 <script src="/vendor/qrcode-generator-1.4.4.js"></script>
 <script>
 (function () {
   "use strict";
   const STEPS = ["labelled", "packed", "loaded", "inroom", "unpacked"];
-  const COLS = [["packed", "Packed"], ["loaded", "Loaded"], ["inroom", "In room"], ["unpacked", "Unpacked"]];
-  const EMPTY = { packed: "Nothing packed and waiting", loaded: "Nothing on a truck", inroom: "Nothing in its room yet", unpacked: "Nothing unpacked yet" };
+  const COLS = [["labelled", "To pack"], ["packed", "Packed"], ["loaded", "Loaded"], ["inroom", "In room"], ["unpacked", "Unpacked"]];
+  const COL_NAME = Object.fromEntries(COLS);
+  const BAR = ["packed", "loaded", "inroom", "unpacked"]; // the progress bar leaves out boxes not packed yet
+  const EMPTY = { labelled: "Everything's packed", packed: "Nothing packed and waiting", loaded: "Nothing on a truck", inroom: "Nothing in its room yet", unpacked: "Nothing unpacked yet" };
   const FRESH_MS = 90 * 1000;
   const $ = (s) => document.querySelector(s);
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -138,7 +160,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   try { sort = localStorage.getItem("boardSort") === "room" ? "room" : "num"; } catch (e) {}
 
   // Columns are built once; refreshes only replace their contents when something changed.
-  $("#board").innerHTML = COLS.map(([k, l]) => `<section class="col" aria-labelledby="h-${k}"><div class="col-head"><i class="dot b-${k}"></i><h2 id="h-${k}">${l}</h2><b id="n-${k}">0</b></div><div class="col-body" id="c-${k}"></div><div class="more" id="m-${k}" hidden><button type="button" data-more="${k}"></button></div></section>`).join("");
+  $("#board").innerHTML = COLS.map(([k, l]) => `<section class="col" data-k="${k}" aria-labelledby="h-${k}"><div class="col-head"><i class="dot b-${k}"></i><h2 id="h-${k}">${l}</h2><b id="n-${k}">0</b></div><div class="col-body" id="c-${k}"></div><div class="more" id="m-${k}" hidden><button type="button" data-more="${k}"></button></div></section>`).join("");
 
   // How many cards in a column sit below what's on screen. Shown as "3 more below" over a faded edge.
   function updateMore(k) {
@@ -166,7 +188,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 
   function card(b, fresh) {
     const r = rooms[b.dest];
-    return `<div class="card ${fresh ? "is-new" : ""}" style="--sw:${r ? hexOf(r.colour) || "var(--line)" : "var(--line)"}">
+    return `<div class="card ${fresh ? "is-new" : ""}" data-id="${esc(b.id)}" style="--sw:${r ? hexOf(r.colour) || "var(--line)" : "var(--line)"}">
       <span class="n">${tagOf(b)}</span>
       ${b.cat ? `<span class="what">${esc(b.cat)}</span>` : photoCount(b) ? `<span class="what">${photoCount(b) === 1 ? "1 photo" : photoCount(b) + " photos"}</span>` : `<span class="what is-empty">Contents not set</span>`}
       <span class="rm">→ ${esc(r ? r.name : "No room yet")}</span></div>`;
@@ -188,7 +210,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
     $("#sTodo").textContent = by.labelled.length;
     $("#sPct").textContent = total ? Math.round((there / total) * 100) + "%" : "–";
     const bars = $("#bar").children;
-    COLS.forEach(([k], i) => { bars[i].style.width = total ? (by[k].length / total) * 100 + "%" : "0"; });
+    BAR.forEach((k, i) => { bars[i].style.width = total ? (by[k].length / total) * 100 + "%" : "0"; });
 
     // Room tiles: how much of each room's stuff has arrived (in room or unpacked).
     const tiles = roomList().map((r) => ({ r, rows: all.filter((b) => b.dest === r.id) })).filter((t) => t.rows.length);
@@ -234,14 +256,120 @@ button { font: inherit; color: inherit; cursor: pointer; }
     paintSort(); render(true);
   });
 
+  // ---------- Moving cards between columns ----------
+  // Mouse: drag. Touch: hold a card for a moment, then drag (a quick swipe still scrolls). Any card can
+  // also be tapped for a Move to menu. The server still refuses loading before it opens.
+  const pending = new Map();
+  let drag = null, droppedAt = 0, sayT;
+  function say(msg, bad) { const el = $("#say"); el.textContent = msg; el.classList.toggle("bad", !!bad); el.hidden = false; clearTimeout(sayT); sayT = setTimeout(() => (el.hidden = true), bad ? 6000 : 2500); }
+  async function moveBox(id, from, to) {
+    const b = boxes[id]; if (!b || from === to) return;
+    const before = b;
+    pending.set(id, to); boxes[id] = Object.assign({}, b, { status: to, statusAt: new Date().toISOString() }); render(true);
+    try {
+      const r = await fetch("/api/boxes/" + encodeURIComponent(id), { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ status: to, from, resetScan: true }) });
+      const body = await r.json().catch(() => ({}));
+      if (!r.ok) { const err = new Error(body.error || "Couldn't move it (HTTP " + r.status + ")."); err.box = body.box; throw err; }
+      boxes[id] = body.box; say(`${tagOf(body.box)} → ${COL_NAME[to]}`);
+    } catch (e) { boxes[id] = e.box || before; say(e.message || "Couldn't move it. Check the connection.", true); }
+    pending.delete(id); render(true);
+  }
+  const colAt = (x, y) => { const el = document.elementFromPoint(x, y), col = el && el.closest(".col"); return col ? col.dataset.k : null; };
+  function startDrag() {
+    const r = drag.el.getBoundingClientRect(), g = drag.el.cloneNode(true);
+    g.classList.add("ghost"); g.style.width = r.width + "px";
+    drag.dx = drag.x - r.left; drag.dy = drag.y - r.top; drag.ghost = g; drag.active = true;
+    document.body.appendChild(g); drag.el.classList.add("is-lifted"); document.body.classList.add("is-dragging");
+    closeMenu(); moveDrag(drag.x, drag.y); requestAnimationFrame(autoScroll);
+  }
+  function moveDrag(x, y) {
+    drag.x = x; drag.y = y;
+    drag.ghost.style.transform = `translate(${x - drag.dx}px, ${y - drag.dy}px) rotate(-1.5deg)`;
+    const k = colAt(x, y);
+    document.querySelectorAll(".col").forEach((c) => c.classList.toggle("is-target", c.dataset.k === k && k !== drag.from));
+  }
+  // Near the top or bottom of a column (or of the screen, on a phone): scroll that way.
+  function autoScroll() {
+    if (!drag || !drag.active) return;
+    const { x, y } = drag, el = document.elementFromPoint(x, y), body = el && el.closest(".col-body");
+    if (body) { const r = body.getBoundingClientRect(); if (y < r.top + 36) body.scrollTop -= 10; else if (y > r.bottom - 36) body.scrollTop += 10; }
+    if (y < 40) window.scrollBy(0, -12); else if (y > window.innerHeight - 40) window.scrollBy(0, 12);
+    requestAnimationFrame(autoScroll);
+  }
+  function stopDrag(drop) {
+    if (!drag) return;
+    clearTimeout(drag.timer);
+    if (drag.active) {
+      const to = drop ? colAt(drag.x, drag.y) : null, { id, from } = drag;
+      drag.ghost.remove(); drag.el.classList.remove("is-lifted"); document.body.classList.remove("is-dragging");
+      document.querySelectorAll(".col.is-target").forEach((c) => c.classList.remove("is-target"));
+      droppedAt = Date.now(); // the click that follows a drop isn't a tap
+      drag = null;
+      if (to && to !== from) moveBox(id, from, to);
+      else render(true);
+      return;
+    }
+    drag = null;
+  }
+  const grab = (c, x, y, touch) => ({ id: c.dataset.id, from: c.closest(".col").dataset.k, el: c, x0: x, y0: y, x, y, touch, active: false });
+  const board = $("#board");
+  board.addEventListener("pointerdown", (e) => {
+    if (e.pointerType === "touch" || e.button !== 0) return;
+    const c = e.target.closest(".card[data-id]"); if (c) drag = grab(c, e.clientX, e.clientY, false);
+  });
+  window.addEventListener("pointermove", (e) => {
+    if (!drag || drag.touch || e.pointerType === "touch") return;
+    if (!drag.active) { drag.x = e.clientX; drag.y = e.clientY; if (Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) > 6) startDrag(); return; }
+    e.preventDefault(); moveDrag(e.clientX, e.clientY);
+  });
+  window.addEventListener("pointerup", (e) => { if (drag && !drag.touch && e.pointerType !== "touch") stopDrag(true); });
+  board.addEventListener("touchstart", (e) => {
+    const c = e.target.closest(".card[data-id]"); if (!c || e.touches.length !== 1) return;
+    const t = e.touches[0]; drag = grab(c, t.clientX, t.clientY, true);
+    drag.timer = setTimeout(() => { if (drag && !drag.active) { startDrag(); if (navigator.vibrate) navigator.vibrate(12); } }, 280);
+  }, { passive: true });
+  window.addEventListener("touchmove", (e) => {
+    if (!drag || !drag.touch) return;
+    const t = e.touches[0];
+    if (!drag.active) { if (Math.hypot(t.clientX - drag.x0, t.clientY - drag.y0) > 10) stopDrag(false); else { drag.x = t.clientX; drag.y = t.clientY; } return; }
+    e.preventDefault(); moveDrag(t.clientX, t.clientY);
+  }, { passive: false });
+  window.addEventListener("touchend", (e) => { if (!drag || !drag.touch) return; if (drag.active && e.cancelable) e.preventDefault(); stopDrag(true); });
+  window.addEventListener("touchcancel", () => { if (drag && drag.touch) stopDrag(false); });
+  board.addEventListener("contextmenu", (e) => { if (e.target.closest(".card")) e.preventDefault(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") { if (drag) stopDrag(false); closeMenu(); } });
+
+  // Tap a card: Move to menu.
+  let menuId = null;
+  function openMenu(id) {
+    const b = boxes[id]; if (!b) return;
+    menuId = id; const here = statusOf(b);
+    $("#menuT").textContent = `Move ${tagOf(b)}${b.cat ? " · " + b.cat : ""} to`;
+    $("#menuOpts").innerHTML = COLS.map(([k, l]) => `<button type="button" data-to="${k}" ${k === here ? "disabled" : ""}><i class="b-${k}"></i>${l}${k === here ? " (now)" : ""}</button>`).join("");
+    $("#menu").hidden = false;
+  }
+  function closeMenu() { $("#menu").hidden = true; menuId = null; }
+  board.addEventListener("click", (e) => {
+    const c = e.target.closest(".card[data-id]"); if (!c || Date.now() - droppedAt < 400) return;
+    openMenu(c.dataset.id);
+  });
+  $("#menuOpts").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-to]"); if (!b || !menuId || !boxes[menuId]) return;
+    const id = menuId; closeMenu(); moveBox(id, statusOf(boxes[id]), b.dataset.to);
+  });
+  $("#menuX").addEventListener("click", closeMenu);
+  document.addEventListener("click", (e) => { if (!$("#menu").hidden && !e.target.closest("#menu") && !e.target.closest(".card")) closeMenu(); });
+
   async function refresh() {
     try {
       const r = await fetch("/api/state", { cache: "no-store" });
       if (!r.ok) throw new Error("HTTP " + r.status);
       const s = await r.json();
       rooms = s.rooms || {}; boxes = s.boxes || {}; okAt = Date.now();
+      // A move still on its way to the server stays where it was dropped.
+      pending.forEach((st, id) => { if (boxes[id]) boxes[id] = Object.assign({}, boxes[id], { status: st }); });
     } catch (e) { /* keep the last board on screen; the footer says it's stale */ }
-    if (okAt) render(false);
+    if (okAt && !(drag && drag.active)) render(false);
     const stale = okAt && Date.now() - okAt > 20000;
     const text = !okAt ? `<span class="bad">Can't reach the box list yet</span>` : stale ? `<span class="bad">Lost connection · last updated ${new Date(okAt).toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit" })}</span>` : `Live · updated ${new Date(okAt).toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit", second: "2-digit" })}`;
     if ($("#updated").innerHTML !== text) $("#updated").innerHTML = text;

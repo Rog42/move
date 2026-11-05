@@ -7,13 +7,15 @@ It runs as a single Cloudflare Worker: static files from `public/`, the API in `
 | --- | --- | --- |
 | `/` | Box scanning, new labels, every box grouped by Savoy room. Rooms fold away; a folded room still lists its box numbers, and the room of the box just scanned opens by itself | Anyone with the link |
 | `/b/014` | Where each label's QR code points. Opening it moves box 014 one step | Anyone with the link |
-| `/board` | Kanban of Packed, Loaded, In room and Unpacked, with a % full tile per room, for a tablet or laptop at each house. A column with more cards than fit fades at the bottom and says how many are below. Refreshes every 3 seconds, keeps the screen awake, and has a QR code so helpers can open the scanner | Anyone with the link |
+| `/board` | Kanban of To pack, Packed, Loaded, In room and Unpacked, with a % full tile per room, for a tablet or laptop at each house. Drag a card to another column to move the box (on a touch screen, hold it for a moment first), or tap it for a Move to menu. A column with more cards than fit fades at the bottom and says how many are below. Refreshes every 3 seconds, keeps the screen awake, and has a QR code so helpers can open the scanner | Anyone with the link |
 | `/plan` | Floor plan of 12 Savoy Court with each room in its marker colour and a key, for helpers on the day. Prints on one A4 page (landscape). Room names and colours come from the live room list; the layout is in `public/plan.html` | Anyone with the link |
 | `/lists` | Utilities and address-change checklists | Locked until Cloudflare Access is set up (see below) |
 
 Each scan moves a box one step: **labelled → packed → loaded → in room → unpacked**. The last scan is for when it's been emptied, or for furniture once it's set up. A second scan of the same box within 15 seconds is ignored. That means a box with labels on several sides can be turned over and scanned again without skipping a step.
 
 **Nothing is loaded before the truck: Fri 6 Nov 2026, 5pm.** Until then, scanning a packed box leaves it packed and opens its card instead: the room, what's in it, a box to add or change the contents, and **Take photo**. The stage buttons stop at Packed too, and the server refuses anything further, so it can't be got round from another phone. The time is `LOAD_FROM` in `wrangler.toml`; the code defaults to 5pm on the Friday. A room can open at its own time: add `loadFrom` to its room document in D1 (Craft opens at 9am on the Friday). Its boxes follow that time, and the app shows it.
+
+**Packing several at once:** every box in the All boxes list has a tick box, and each open room has **Tick all N not packed**. Tick some and a bar at the bottom offers **Mark N packed**; boxes already packed or further along are left as they are. **Undo** stays on the bar for 15 seconds. Each change only goes through if the box is still where this phone saw it, so a scan on another phone at the same moment isn't undone. The board's moves work the same way.
 
 **Photos of what's in a box:** Take photo on a box's card (or on the scanner after a scan) opens the phone's camera. The app shrinks each photo to 1600 px before sending it, and keeps up to 20 per box. Photos are stored in the D1 database, in a `photos` table the API creates the first time it needs it, and deleting a box deletes its photos. Like the box list, anyone with the site address can see them.
 
@@ -39,7 +41,7 @@ Until step 3 is done, `/api/lists/*` returns 403. The account and policy numbers
 
 **Not moving:** at the bottom of **Goes to** on New box label, under Not moving, are **Vinnies** and **Sell / Give away**. Picking one previews a plain label with no number, QR code or room colour: big VINNIES or SELL / GIVE AWAY, with DO NOT LOAD across the bottom (and the contents, if typed in). **Create** adds it to **To print**, where it prints on the same sheets as the box labels, or print it there and then. They aren't boxes: no number is used and nothing is scanned or tracked (they're kept as `signs` in the database).
 
-**Fragile stickers:** **Fragile** sits under Stickers at the bottom of **Goes to**. It works the same way (no number or QR code, Create adds it to To print, it prints with the box labels) but it isn't a Not moving label: it has a big FRAGILE with a cracked-glass symbol and HANDLE WITH CARE across the bottom, for sticking on a box alongside its own numbered label.
+**Fragile and Heavy stickers:** **Fragile** and **Heavy (2 person lift)** sit under Stickers at the bottom of **Goes to**. They work the same way (no number or QR code, Create adds them to To print, they print with the box labels) but they aren't Not moving labels: Fragile has a big FRAGILE with a cracked-glass symbol and HANDLE WITH CARE across the bottom; Heavy has a big HEAVY with two people lifting a box and 2 PERSON LIFT. They go on a box alongside its own numbered label.
 
 **Reprinting:** type box numbers or ranges into **Reprint labels** at the bottom of To print (for example `12-17, 21`, or `T3` for a test label). They go back on the list and print like new ones. A box's card also has a **Reprint** button once its label has been printed.
 
@@ -80,11 +82,11 @@ npx wrangler d1 execute move --local --file=seed.sql
 | GET | `/api/state` | Rooms, boxes and the shared label settings |
 | PUT | `/api/settings/print` | `{size?, copies?, top?, bottom?}`. Shared label settings for every device |
 | POST | `/api/boxes` | `{cat, dest}`. The number comes from an atomic counter in D1, so two phones never get the same one |
-| PATCH | `/api/boxes/:id` | `{cat?, dest?, status?, resetScan?}`. Before loading opens, a status past Packed is refused with 409 |
+| PATCH | `/api/boxes/:id` | `{cat?, dest?, status?, from?, resetScan?}`. Before loading opens, a status past Packed is refused with 409. With `from`, it's refused (409, `moved: true`) if the box is no longer at that stage |
 | DELETE | `/api/boxes/:id` | The number is never reused |
 | POST | `/api/boxes/batch` | `{items: [{cat, dest}], test?}`. Up to 100 labels, consecutive numbers |
 | POST | `/api/boxes/printed` | `{ids, printed?}`. Marks labels printed; unprinted ones make up the To print list. Takes Not moving label ids (`n…`) too |
-| POST | `/api/signs` | `{kind: "vinnies" \| "sell" \| "fragile", cat?}`. A Not moving label or Fragile sticker, added to To print |
+| POST | `/api/signs` | `{kind: "vinnies" \| "sell" \| "fragile" \| "heavy", cat?}`. A Not moving label or Fragile / Heavy sticker, added to To print |
 | DELETE | `/api/boxes?test=1` | Deletes every test label (T001…) and restarts test numbering |
 | POST | `/api/scan/:id` | Moves the box one step. Returns `moved`, `recent` (within 15 s), `held` (packed, before loading opens) or `done` |
 | POST | `/api/boxes/:id/photos` | Body is the image (JPEG, PNG or WebP, up to 1.5 MB). Returns `{pid, box}` |
