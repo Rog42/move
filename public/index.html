@@ -150,6 +150,18 @@ details.fold[open] .chev { transform: rotate(-135deg); margin-bottom: -4px; }
 ul.boxes { list-style: none; margin: 0; padding: 0; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
 .box { display: grid; grid-template-columns: 46px 1fr auto; gap: 10px; align-items: center; padding: 11px 12px; width: 100%; border: 0; background: none; text-align: left; }
 li + li .box { border-top: 1px solid var(--line); }
+/* Tick boxes on each row, for packing several at once */
+ul.boxes li.brow { display: flex; align-items: stretch; }
+ul.boxes li.brow + li { border-top: 1px solid var(--line); }
+ul.boxes li.brow .box { flex: 1; min-width: 0; padding-left: 6px; border-top: 0; }
+.grp.is-open .g-fold + ul.boxes li.brow:first-child, .grp.is-open .g-fold + ul.boxes li.tickall { border-top: 1px solid var(--line); }
+.tick { display: flex; align-items: center; padding: 0 4px 0 12px; cursor: pointer; flex: none; }
+.tick input { width: 20px; height: 20px; margin: 0; accent-color: var(--accent); }
+li.tickall { padding: 8px 12px; background: var(--bg); }
+.tickbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 55; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px max(16px, env(safe-area-inset-left, 0px)) calc(12px + env(safe-area-inset-bottom, 0px)); background: var(--surface); border-top: 1px solid var(--line); box-shadow: 0 -4px 18px rgba(0,0,0,.08); }
+.tickbar span { flex: 1 1 140px; font-size: 14px; }
+body.has-tickbar { padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px)); }
+body.has-tickbar .toast { bottom: calc(84px + env(safe-area-inset-bottom, 0px)); }
 .box:hover { background: color-mix(in srgb, var(--accent-soft) 50%, transparent); }
 .box.is-hot { background: var(--accent-soft); }
 .bn { font-family: var(--f-mono); font-weight: 500; font-variant-numeric: tabular-nums; }
@@ -372,6 +384,7 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
 </dialog>
 
 <div id="printArea"></div>
+<div class="tickbar" id="tickBar" hidden><span id="tickText"></span><button class="btn btn-primary" type="button" id="tickPack">Mark packed</button><button class="btn" type="button" id="tickUndo" hidden>Undo</button><button class="linkbtn" type="button" id="tickClear">Clear</button></div>
 <div class="toast" id="toast" hidden></div>
 
 <script src="/vendor/qrcode-generator-1.4.4.js"></script>
@@ -433,14 +446,16 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
   }
 
   const savoyRooms = () => Object.entries(rooms).map(([id, r]) => Object.assign({ id }, r)).filter((r) => r.list === "unpack" && r.kind !== "prep").sort((a, b) => (a.order || 0) - (b.order || 0));
-  // Plain labels with no number, listed at the bottom of "Goes to" as "!vinnies", "!sell" and "!fragile"
-  // ("!" can't start a room id). group is the heading they sit under there; count is how To print counts them.
+  // Plain labels with no number, listed at the bottom of "Goes to" as "!vinnies", "!sell", "!fragile" and "!heavy"
+  // ("!" can't start a room id). icon is a symbol drawn under or beside the big word. group is the heading they sit under there; count is how To print counts them.
   const NOT_MOVING = { group: "Not moving", noun: "label", count: ["Not moving label", "Not moving labels"], top: "NOT MOVING", bar: "DO NOT LOAD", note: "Each one says DO NOT LOAD." };
   const SIGNS = {
     vinnies: { ...NOT_MOVING, name: "Vinnies", lines: ["VINNIES"], sub: "Donate to St Vincent de Paul" },
     sell: { ...NOT_MOVING, name: "Sell / Give away", lines: ["SELL /", "GIVE AWAY"], sub: "Not coming to Savoy" },
-    fragile: { group: "Stickers", noun: "sticker", count: ["Fragile sticker", "Fragile stickers"], name: "Fragile", lines: ["FRAGILE"], glass: true, bar: "HANDLE WITH CARE",
+    fragile: { group: "Stickers", noun: "sticker", count: ["Fragile sticker", "Fragile stickers"], name: "Fragile", lines: ["FRAGILE"], icon: "glass", bar: "HANDLE WITH CARE",
       note: "Stick them on any box that needs care, as well as its own numbered label." },
+    heavy: { group: "Stickers", noun: "sticker", count: ["Heavy sticker", "Heavy stickers"], name: "Heavy (2 person lift)", lines: ["HEAVY"], icon: "lift", bar: "2 PERSON LIFT",
+      note: "Stick them on any box that needs two people, as well as its own numbered label." },
   };
   const signOf = () => { const v = $("#lbDest").value || ""; return v[0] === "!" && SIGNS[v.slice(1)] ? v.slice(1) : null; };
   // Made plain labels wait on To print with the boxes until they're printed.
@@ -499,7 +514,7 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     }
     const cats = [...new Set(all.map((b) => b.cat).filter(Boolean).concat(DEFAULT_CATS))];
     $("#catList").innerHTML = cats.map((c) => `<option value="${esc(c)}"></option>`).join("");
-    renderLog(); renderFilters(); renderRegister(); drawPreview(); renderMany(); renderQueue();
+    renderLog(); renderFilters(); renderRegister(); renderTickBar(); drawPreview(); renderMany(); renderQueue();
   }
 
   function renderLog() {
@@ -513,11 +528,66 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     const opts = [["all", "All"]].concat(STEPS, missing || filter === "nocat" ? [["nocat", `Contents to add (${missing})`]] : []);
     $("#filters").innerHTML = opts.map(([k, l]) => `<button class="chip" type="button" data-filter="${k}" aria-pressed="${filter === k}">${l}</button>`).join("");
   }
-  const rowHTML = (b) => { const st = statusOf(b); return `<li><button class="box ${b.id === hot ? "is-hot" : ""}" type="button" data-box="${esc(b.id)}"><span class="bn">${tag(b)}</span>${hasContents(b) ? `<span class="bc">${esc(whatText(b))}</span>` : `<span class="bc is-empty">Contents to add</span>`}<span class="st st-${st}">${STEP_NAME[st]}</span></button></li>`; };
+  const rowHTML = (b) => { const st = statusOf(b); return `<li class="brow"><label class="tick"><input type="checkbox" data-tick="${esc(b.id)}" aria-label="Tick ${tag(b)}" ${ticked.has(b.id) ? "checked" : ""}></label><button class="box ${b.id === hot ? "is-hot" : ""}" type="button" data-box="${esc(b.id)}"><span class="bn">${tag(b)}</span>${hasContents(b) ? `<span class="bc">${esc(whatText(b))}</span>` : `<span class="bc is-empty">Contents to add</span>`}<span class="st st-${st}">${STEP_NAME[st]}</span></button></li>`; };
+  // ---------- Ticking boxes to pack several at once ----------
+  const ticked = new Set();
+  let tickBusy = false, lastPack = null, lastPackT;
+  const toPack = (rows) => rows.filter((b) => statusOf(b) === "labelled");
+  function tickAllHTML(rows) {
+    const todo = toPack(rows); if (!todo.length) return "";
+    const all = todo.every((b) => ticked.has(b.id));
+    return `<li class="tickall"><button class="linkbtn" type="button" data-tickids="${esc(todo.map((b) => b.id).join(","))}">${all ? "Untick all" : `Tick all ${todo.length} not packed`}</button></li>`;
+  }
+  function renderTickBar() {
+    [...ticked].forEach((id) => { if (!boxes[id]) ticked.delete(id); });
+    const n = ticked.size, pack = [...ticked].filter((id) => statusOf(boxes[id]) === "labelled").length;
+    const show = n > 0 || !!lastPack;
+    $("#tickBar").hidden = !show; document.body.classList.toggle("has-tickbar", show);
+    if (!show) return;
+    const undoing = !n && lastPack;
+    $("#tickPack").hidden = !!undoing; $("#tickUndo").hidden = !undoing; $("#tickClear").textContent = undoing ? "Done" : "Clear";
+    if (undoing) { $("#tickText").textContent = `Packed ${plural(lastPack.length, "box", "boxes")}.`; return; }
+    $("#tickText").textContent = `${n} ticked${pack < n ? ` (${n - pack} already packed or further, left as they are)` : ""}`;
+    $("#tickPack").textContent = pack ? `Mark ${pack} packed` : "Mark packed";
+    $("#tickPack").disabled = !pack || tickBusy;
+  }
+  // Moves each box only if it's still where this phone last saw it ({from}), so a scan elsewhere isn't undone.
+  async function setStages(ids, from, to) {
+    const done = [], failed = [];
+    await Promise.all(ids.map(async (id) => {
+      try { const r = await api("/api/boxes/" + id, { method: "PATCH", body: JSON.stringify({ status: to, from, resetScan: true }) }); boxes[id] = r.box; done.push(id); }
+      catch (e) { failed.push(id); }
+    }));
+    return { done, failed };
+  }
+  $("#tickPack").addEventListener("click", async () => {
+    const ids = [...ticked].filter((id) => boxes[id] && statusOf(boxes[id]) === "labelled");
+    if (!ids.length || tickBusy) return;
+    tickBusy = true; renderTickBar();
+    const { done, failed } = await setStages(ids, "labelled", "packed");
+    tickBusy = false; ticked.clear();
+    lastPack = done.length ? done : null; clearTimeout(lastPackT);
+    if (lastPack) lastPackT = setTimeout(() => { lastPack = null; renderTickBar(); }, 15000);
+    if (failed.length) toast(`${plural(failed.length, "box", "boxes")} couldn't be packed (changed on another phone?). Check ${failed.map((id) => tag(boxes[id] || {})).join(", ")}.`);
+    render(); refresh();
+  });
+  $("#tickUndo").addEventListener("click", async () => {
+    const ids = lastPack || []; lastPack = null; clearTimeout(lastPackT); renderTickBar();
+    const { done, failed } = await setStages(ids, "packed", "labelled");
+    toast(`${plural(done.length, "box", "boxes")} back to Labelled.${failed.length ? ` ${failed.length} had already moved on, so left as they are.` : ""}`);
+    render(); refresh();
+  });
+  $("#tickClear").addEventListener("click", () => { ticked.clear(); lastPack = null; clearTimeout(lastPackT); renderRegister(); renderTickBar(); });
+  $("#register").addEventListener("change", (e) => {
+    const c = e.target.closest("[data-tick]"); if (!c) return;
+    if (c.checked) ticked.add(c.dataset.tick); else ticked.delete(c.dataset.tick);
+    lastPack = null; renderRegister(); renderTickBar();
+  });
+
   function renderRegister() {
     if (!loaded) return;
     const all = list(), tst = tests();
-    const testHTML = tst.length ? `<section><div class="g-head"><h3>Test labels</h3><span>${plural(tst.length, "label", "labels")}</span><button class="linkbtn" type="button" id="delTests">${delTestsArmed ? "Tap again to delete them all" : "Delete all"}</button></div><ul class="boxes">${tst.map(rowHTML).join("")}</ul></section>` : "";
+    const testHTML = tst.length ? `<section><div class="g-head"><h3>Test labels</h3><span>${plural(tst.length, "label", "labels")}</span><button class="linkbtn" type="button" id="delTests">${delTestsArmed ? "Tap again to delete them all" : "Delete all"}</button></div><ul class="boxes">${tickAllHTML(tst)}${tst.map(rowHTML).join("")}</ul></section>` : "";
     if (!all.length) { $("#register").innerHTML = `<div class="groups"><div class="empty"><b>No boxes yet</b>Create the first label above. Numbers start at 001 and are never reused.</div>${testHTML}</div>`; return; }
     const shown = filter === "all" ? all : filter === "nocat" ? all.filter((b) => !hasContents(b)) : all.filter((b) => statusOf(b) === filter);
     if (!shown.length) { $("#register").innerHTML = `<div class="groups"><div class="empty">${filter === "nocat" ? "<b>Every box has its contents</b>Nothing left to fill in." : `<b>No ${esc(STEP_NAME[filter].toLowerCase())} boxes</b>Pick another filter to see the rest.`}</div>${testHTML}</div>`; return; }
@@ -534,11 +604,11 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
       const inr = g.rows.filter((b) => statusOf(b) === "inroom" || statusOf(b) === "unpacked").length;
       const sw = g.r ? hexOf(g.r.colour) || "transparent" : "transparent", name = g.r ? esc(g.r.name) : "No room yet";
       const count = `${plural(g.rows.length, "box", "boxes")} · ${inr} in room`;
-      if (forced) return `<section><div class="g-head"><i class="sw" style="--sw:${sw}"></i><h3>${name}</h3><span>${count}</span></div><ul class="boxes">${g.rows.map(rowHTML).join("")}</ul></section>`;
+      if (forced) return `<section><div class="g-head"><i class="sw" style="--sw:${sw}"></i><h3>${name}</h3><span>${count}</span></div><ul class="boxes">${tickAllHTML(g.rows)}${g.rows.map(rowHTML).join("")}</ul></section>`;
       return `<section class="grp ${open ? "is-open" : ""}"><button class="g-fold" type="button" data-fold="${key}" aria-expanded="${open}">
           <i class="sw" style="--sw:${sw}"></i><h3>${name}</h3><span class="g-count">${count}</span><i class="chev" aria-hidden="true"></i>
           ${open ? "" : `<span class="g-nums">${g.rows.map(tag).join("  ")}</span>`}</button>
-        ${open ? `<ul class="boxes">${g.rows.map(rowHTML).join("")}</ul>` : ""}</section>`;
+        ${open ? `<ul class="boxes">${tickAllHTML(g.rows)}${g.rows.map(rowHTML).join("")}</ul>` : ""}</section>`;
     }).join("")}${testHTML}</div>`;
     const keys = groups.map((g) => (g.r ? g.r.id : "_none"));
     $("#foldAll").hidden = forced || keys.length < 2;
@@ -687,6 +757,23 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     c.moveTo(cx - half * 0.25, top); c.lineTo(cx + half * 0.12, top + bowlH * 0.3); c.lineTo(cx - half * 0.18, top + bowlH * 0.5); c.lineTo(cx + half * 0.15, top + bowlH * 0.82);
     c.stroke(); c.strokeStyle = ink;
   }
+  // Two people lifting a box between them (ISO-style), drawn into the box x, y, w, h.
+  function drawLift(c, x, y, w, h, ink) {
+    const lw = Math.min(w, h * 1.35), lh = lw / 1.35, ox = x + (w - lw) / 2, oy = y + (h - lh) / 2;
+    const P = (fx, fy) => [ox + fx * lw, oy + fy * lh];
+    c.fillStyle = ink; c.strokeStyle = ink; c.lineCap = "round"; c.lineJoin = "round"; c.lineWidth = Math.max(3, lw * 0.055);
+    const line = (...pts) => { c.beginPath(); c.moveTo(...P(...pts[0])); pts.slice(1).forEach((p) => c.lineTo(...P(...p))); c.stroke(); };
+    [[0.13, 1], [0.87, -1]].forEach(([hx, d]) => {
+      const [cx, cy] = P(hx, 0.14); c.beginPath(); c.arc(cx, cy, lw * 0.06, 0, Math.PI * 2); c.fill();   // head
+      line([hx + d * 0.01, 0.28], [hx + d * 0.04, 0.6]);                                                  // body, leaning in
+      line([hx + d * 0.02, 0.34], [hx + d * 0.17, 0.46], [hx + d * 0.26, 0.47]);                         // arm to the box
+      line([hx + d * 0.04, 0.6], [hx + d * 0.12, 0.78], [hx + d * 0.08, 0.98]);                          // front leg, knee bent
+      line([hx + d * 0.04, 0.6], [hx - d * 0.03, 0.8], [hx - d * 0.06, 0.98]);                           // back leg
+    });
+    const [bx, by] = P(0.36, 0.38); c.fillRect(bx, by, lw * 0.28, lh * 0.3);                           // the box
+    c.lineCap = "butt"; c.lineJoin = "miter";
+  }
+  const ICONS = { glass: { draw: (...a) => drawGlass(...a), aspect: 0.62 }, lift: { draw: (...a) => drawLift(...a), aspect: 1.35 } };
   function drawSign(cv, kind, what, ghost) {
     const s = SIGNS[kind], [wmm, hmm] = SIZES[size];
     const W = wmm * 8, H = hmm * 8, portrait = H > W, m = Math.min(W, H);
@@ -711,14 +798,15 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
       let ly = from + Math.max(0, Math.round((to - from - fs * 1.05 * s.lines.length) / 2));
       s.lines.forEach((l) => { c.fillText(l, x, ly); ly += Math.round(fs * 1.05); });
     };
-    if (s.glass && portrait) {
+    const icon = ICONS[s.icon];
+    if (icon && portrait) {
       const fsB = words(inner, (bottom - y) * 0.36), wordsH = Math.round(fsB * 1.05 * s.lines.length);
       putWords(fsB, pad, y, y + wordsH);
       const gy = y + wordsH + Math.round(pad * 0.6);
-      drawGlass(c, pad, gy, inner, bottom - gy - Math.round(pad * 0.3), ink);
-    } else if (s.glass) {
-      const gh = bottom - y, gw = Math.min(Math.round(gh * 0.62), Math.round(inner * 0.3));
-      drawGlass(c, W - pad - gw, y, gw, gh, ink);
+      icon.draw(c, pad, gy, inner, bottom - gy - Math.round(pad * 0.3), ink);
+    } else if (icon) {
+      const gh = bottom - y, gw = Math.min(Math.round(gh * icon.aspect), Math.round(inner * (icon.aspect > 1 ? 0.42 : 0.3)));
+      icon.draw(c, W - pad - gw, y, gw, gh, ink);
       putWords(words(inner - gw - Math.round(pad * 0.6), bottom - y), pad, y, bottom);
     } else putWords(words(inner, bottom - y), pad, y, bottom);
     if (fsS) { c.fillStyle = ink; c.font = `700 ${fsS}px ${LFONT}`; c.fillText(sub, pad, bottom + Math.round(fsS * 0.3)); }
@@ -1245,6 +1333,13 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
   });
   function closeSheet() { const d = $("#sheet"); if (d.close) d.close(); else d.removeAttribute("open"); sheetId = null; }
   $("#register").addEventListener("click", (e) => {
+    const g = e.target.closest("[data-tickids]");
+    if (g) {
+      const ids = g.dataset.tickids.split(",").filter((id) => boxes[id]);
+      const all = ids.every((id) => ticked.has(id));
+      ids.forEach((id) => (all ? ticked.delete(id) : ticked.add(id)));
+      lastPack = null; renderRegister(); renderTickBar(); return;
+    }
     const f = e.target.closest("[data-fold]");
     if (f) {
       const k = f.dataset.fold, open = f.getAttribute("aria-expanded") === "true";

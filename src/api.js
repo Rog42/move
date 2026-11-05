@@ -5,8 +5,8 @@
 //   POST   /api/boxes                 create the next numbered box {cat, dest, test?}
 //   POST   /api/boxes/batch           create many {items: [{cat, dest}], test?}, consecutive numbers
 //   POST   /api/boxes/printed         mark labels printed {ids, printed?} (unprinted = To print list); takes sign ids too
-//   POST   /api/signs                 a plain label {kind: "vinnies" | "sell" | "fragile", cat?}: no number or QR, just goes on To print
-//   PATCH  /api/boxes/:id             change cat / dest / status
+//   POST   /api/signs                 a plain label {kind: "vinnies" | "sell" | "fragile" | "heavy", cat?}: no number or QR, just goes on To print
+//   PATCH  /api/boxes/:id             change cat / dest / status; {from} refuses (409) if the box has since moved off that stage
 //   DELETE /api/boxes/:id             remove a box (its number is never reused)
 //   DELETE /api/boxes?test=1          remove every test label (T001...) and restart test numbering
 //   POST   /api/scan/:id              move a box one step: labelled > packed > loaded > inroom > unpacked
@@ -28,6 +28,7 @@ import { listsAccess } from "./access.js";
 
 const STEPS = ["labelled", "packed", "loaded", "inroom", "unpacked"];
 const PACKED = STEPS.indexOf("packed");
+const STEP_NAMES = { labelled: "Labelled", packed: "Packed", loaded: "Loaded", inroom: "In room", unpacked: "Unpacked" };
 const SCAN_GUARD_MS = 15000;
 // Nothing is loaded before the truck: Fri 6 Nov 2026, 5pm Sydney time. LOAD_FROM in wrangler.toml can move it.
 const LOAD_FROM_DEFAULT = "2026-11-06T17:00:00+11:00";
@@ -50,8 +51,8 @@ function cleanPrintSettings(body) {
   }
   return out;
 }
-// Plain labels: Not moving (Vinnies, Sell / Give away) and Fragile stickers. Ids start with "n", so they never clash with boxes (b001, t001).
-const SIGN_KINDS = new Set(["vinnies", "sell", "fragile"]);
+// Plain labels: Not moving (Vinnies, Sell / Give away) and Fragile / Heavy stickers. Ids start with "n", so they never clash with boxes (b001, t001).
+const SIGN_KINDS = new Set(["vinnies", "sell", "fragile", "heavy"]);
 const labelCol = (id) => (id[0] === "n" ? "signs" : "boxes");
 const LIST_COLS = new Set(["items", "meta"]);
 const ID_RE = /^[A-Za-z0-9_\-.~:@+]{1,120}$/;
@@ -233,7 +234,7 @@ export async function handleApi(request, env, parts) {
     // A plain label (Not moving or Fragile): no number, nothing to scan. It waits on To print like a box label.
     if (parts[0] === "signs" && parts.length === 1 && method === "POST") {
       const body = await readBody(request);
-      if (!body || !SIGN_KINDS.has(body.kind)) return fail(400, "Say which label: vinnies, sell or fragile.");
+      if (!body || !SIGN_KINDS.has(body.kind)) return fail(400, "Say which label: vinnies, sell, fragile or heavy.");
       const id = "n" + crypto.randomUUID().replace(/-/g, "").slice(0, 12);
       const sign = { kind: body.kind, cat: typeof body.cat === "string" ? body.cat.trim().slice(0, 40) : "", createdAt: new Date().toISOString() };
       await putDoc(DB, "signs", id, sign);
@@ -307,6 +308,10 @@ export async function handleApi(request, env, parts) {
         for (let attempt = 0, doc = cur; attempt < RETRIES; attempt++) {
           if (attempt) { await backoff(attempt); doc = await getDoc(DB, "boxes", id); }
           if (!doc) return fail(404, "No such box.");
+          // {from: "labelled"} (ticked packing, board drags): only change it if it's still where the sender saw it,
+          // so a scan from another phone in the meantime isn't undone.
+          if (typeof body.from === "string" && STEPS.includes(body.from) && statusOf(doc.data) !== body.from)
+            return json({ error: `Box ${id.toUpperCase().replace(/^B/, "")} has just moved to ${STEP_NAMES[statusOf(doc.data)]} on another phone.`, moved: true, box: doc.data }, 409);
           // Until loading opens for its room, a box can't be moved forward past Packed (moving back is fine).
           if (f.status && STEPS.indexOf(f.status) > PACKED && STEPS.indexOf(f.status) > STEPS.indexOf(statusOf(doc.data))) {
             const at = await boxLoadFrom(DB, env, { ...doc.data, ...f });
