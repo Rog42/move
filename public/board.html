@@ -272,7 +272,9 @@ body.is-dragging, body.is-dragging * { cursor: grabbing !important; }
       if (!r.ok) { const err = new Error(body.error || "Couldn't move it (HTTP " + r.status + ")."); err.box = body.box; throw err; }
       boxes[id] = body.box; say(`${tagOf(body.box)} → ${COL_NAME[to]}`);
     } catch (e) { boxes[id] = e.box || before; say(e.message || "Couldn't move it. Check the connection.", true); }
-    pending.delete(id); render(true);
+    // This reply (or the dropped position) can be older than a refresh that came in meanwhile,
+    // so the next refresh fetches everything rather than accepting "nothing changed".
+    pending.delete(id); stateTag = ""; render(true);
   }
   const colAt = (x, y) => { const el = document.elementFromPoint(x, y), col = el && el.closest(".col"); return col ? col.dataset.k : null; };
   function startDrag() {
