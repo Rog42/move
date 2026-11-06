@@ -10,6 +10,7 @@
 //   DELETE /api/boxes/:id             remove a box (its number is never reused)
 //   DELETE /api/boxes?test=1          remove every test label (T001...) and restart test numbering
 //   POST   /api/scan/:id              move a box one step: labelled > packed > loaded > inroom > unpacked
+//   POST   /api/voice                 audio (WAV) -> Whisper -> {text, stage, ids, missing, unclear}; or JSON {text} to skip Whisper
 //                                     Before loading opens (LOAD_FROM), a packed box stays packed: result "held"
 //                                     ?via=qr (a label's QR code was scanned) also takes it off the To print list
 //   PUT    /api/settings/print        shared label settings {size?, copies?, top?, bottom?}, used by every phone
@@ -25,6 +26,7 @@
 //   DELETE /api/lists/doc/:col/:id    delete a document
 
 import { listsAccess } from "./access.js";
+import { parseVoice } from "./voice.js";
 
 const STEPS = ["labelled", "packed", "loaded", "inroom", "unpacked"];
 const PACKED = STEPS.indexOf("packed");
@@ -71,6 +73,17 @@ function merge(base, patch) {
   return out;
 }
 const pad3 = (n) => String(n).padStart(3, "0");
+
+// Voice (the scanner's mic): Whisper on Workers AI, nudged towards box numbers and stage words.
+const WHISPER = "@cf/openai/whisper-large-v3-turbo";
+const VOICE_PROMPT = "Box numbers and moving stages: packed, loaded, in room, unpacked. For example: loaded 12, 145, 284.";
+const VOICE_MAX_BYTES = 1500000; // about 45 seconds of 16 kHz mono WAV
+function toBase64(buf) {
+  const u8 = new Uint8Array(buf);
+  let s = "";
+  for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000));
+  return btoa(s);
+}
 
 async function readBody(request) {
   try {
@@ -332,6 +345,36 @@ export async function handleApi(request, env, parts) {
         await DB.prepare("DELETE FROM photos WHERE box = ?").bind(id).run();
         return json({ id, deleted: true });
       }
+    }
+
+    // ---------- Voice ----------
+    // The phone records, converts to 16 kHz WAV and posts it here. Whisper writes it down, then
+    // parseVoice pulls out the stage (optional) and box numbers. Moving the boxes is left to the
+    // phone, which shows what it heard first and sends each move with {from}.
+    if (parts[0] === "voice" && parts.length === 1 && method === "POST") {
+      const type = (request.headers.get("content-type") || "").toLowerCase();
+      let text;
+      if (type.startsWith("application/json")) {
+        const body = await readBody(request);
+        if (!body || typeof body.text !== "string") return fail(400, "Send {text}, or the recording.");
+        text = body.text.slice(0, 2000);
+      } else {
+        if (!env.AI) return fail(503, "Voice needs Workers AI, which isn't connected here.");
+        const buf = await request.arrayBuffer();
+        if (!buf.byteLength) return fail(400, "No sound came through. Try again.");
+        if (buf.byteLength > VOICE_MAX_BYTES) return fail(413, "That was too long. Keep it under 30 seconds.");
+        try {
+          const r = await env.AI.run(WHISPER, { audio: toBase64(buf), language: "en", initial_prompt: VOICE_PROMPT });
+          text = String((r && (r.text || (r.transcription_info && r.transcription_info.text))) || "");
+        } catch (e) {
+          return fail(502, "Couldn't make out the recording. Try again, or type the numbers.");
+        }
+      }
+      const rows = await DB.prepare("SELECT id FROM docs WHERE col = 'boxes'").all();
+      const existing = new Set((rows.results || []).map((r) => r.id));
+      const knownNumbers = new Set([...existing].filter((id) => id[0] === "b").map((id) => parseInt(id.slice(1), 10)));
+      const { stage, ids, unclear } = parseVoice(text, knownNumbers);
+      return json({ text: text.trim(), stage, ids: ids.filter((id) => existing.has(id)), missing: ids.filter((id) => !existing.has(id)), unclear });
     }
 
     if (parts[0] === "scan" && parts.length === 2 && method === "POST") {
