@@ -498,18 +498,30 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
   // Every 4 s the phone asks for the state, saying which version it already has. If nothing has
   // changed the server answers 304 with no body and nothing is redrawn, so the page stays still
   // (no lost taps) and a weak mobile connection isn't kept busy with the whole box list.
-  let stateTag = "", printingAt = 0;
+  let stateTag = "", printingAt = 0, sharedPrint = null, drawnAt = 0;
+  const printSig = () => [size, copies, sheetAdj.top, sheetAdj.bottom].join();
+  // Loading times (the default and each room's own) that have come round since the last redraw.
+  // Nothing on the server changes when one passes, so the version stays the same.
+  const lockPassed = (since, now) => [loadAt, ...Object.values(rooms).map((r) => Date.parse((r && r.loadFrom) || ""))].some((t) => t > since && t <= now);
   async function refresh() {
     try {
       const r = await fetch("/api/state", { cache: "no-store", headers: stateTag && loaded ? { "if-none-match": stateTag } : {} });
-      if (r.status === 304) return;
+      if (r.status === 304) {
+        // Nothing new, but settings held back earlier (an edit here in the last few seconds, or
+        // the size box in use) are applied now, and a loading time that's just passed unlocks.
+        const before = printSig(), now = Date.now();
+        applyPrintSettings(sharedPrint);
+        if (printSig() !== before || lockPassed(drawnAt, now)) { drawnAt = now; render(); }
+        return;
+      }
       if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || "HTTP " + r.status); }
       const s = await r.json();
       stateTag = r.headers.get("etag") || "";
       rooms = s.rooms || {}; boxes = s.boxes || {}; signs = s.signs || {}; loaded = true;
       if (num(s.loadFrom)) loadAt = num(s.loadFrom);
-      applyPrintSettings(s.settings && s.settings.print);
-      render();
+      sharedPrint = (s.settings && s.settings.print) || null;
+      applyPrintSettings(sharedPrint);
+      drawnAt = Date.now(); render();
     } catch (e) { if (!loaded) setHTML($("#register"), `<div class="empty"><b>Can't reach the box list</b>${esc(e.message)}</div>`); }
   }
   // Leave the page alone while the print dialog is up (for a minute at most, in case a browser
