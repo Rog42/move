@@ -498,7 +498,8 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
   // Every 4 s the phone asks for the state, saying which version it already has. If nothing has
   // changed the server answers 304 with no body and nothing is redrawn, so the page stays still
   // (no lost taps) and a weak mobile connection isn't kept busy with the whole box list.
-  let stateTag = "", printingAt = 0, sharedPrint = null, drawnAt = 0;
+  let stateTag = "", printingAt = 0, sharedPrint = null, drawnAt = 0, selHeld = false;
+  const roomSels = () => [$("#lbDest"), $("#mRoom")];
   const printSig = () => [size, copies, sheetAdj.top, sheetAdj.bottom].join();
   // Loading times (the default and each room's own) that have come round since the last redraw.
   // Nothing on the server changes when one passes, so the version stays the same.
@@ -507,11 +508,13 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     try {
       const r = await fetch("/api/state", { cache: "no-store", headers: stateTag && loaded ? { "if-none-match": stateTag } : {} });
       if (r.status === 304) {
-        // Nothing new, but settings held back earlier (an edit here in the last few seconds, or
-        // the size box in use) are applied now, and a loading time that's just passed unlocks.
+        // Nothing new, but anything held back earlier is caught up now: shared settings (an edit
+        // here in the last few seconds, or the size box in use), a room list that was open when
+        // the rooms came in, and a loading time that's just passed.
         const before = printSig(), now = Date.now();
         applyPrintSettings(sharedPrint);
-        if (printSig() !== before || lockPassed(drawnAt, now)) { drawnAt = now; render(); }
+        const selFree = selHeld && !roomSels().includes(document.activeElement);
+        if (printSig() !== before || selFree || lockPassed(drawnAt, now)) { drawnAt = now; render(); }
         return;
       }
       if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || "HTTP " + r.status); }
@@ -535,12 +538,13 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
   function render() {
     const all = list();
     setHTML($("#counts"), STEPS.map(([k, l]) => `<div class="count"><b>${all.filter((b) => statusOf(b) === k).length}</b><span>${l}</span></div>`).join(""));
-    for (const sel of [$("#lbDest"), $("#mRoom")]) {
-      if (document.activeElement === sel) continue;
-      const cur = sel.value;
+    selHeld = false;
+    for (const sel of roomSels()) {
       const opts = `<option value="">Choose a room</option>` + savoyRooms().map((r) => `<option value="${esc(r.id)}">${esc(r.name)}</option>`).join("")
         + (sel.id === "lbDest" ? [...new Set(Object.values(SIGNS).map((x) => x.group))].map((g) => `<optgroup label="${esc(g)}">${Object.entries(SIGNS).filter(([, x]) => x.group === g).map(([k, x]) => `<option value="!${k}">${esc(x.name)}</option>`).join("")}</optgroup>`).join("") : "");
       if (sel.__html === opts) continue; // same rooms as last time: leave the list alone
+      if (document.activeElement === sel) { selHeld = true; continue; } // in use: fill it in once it's let go
+      const cur = sel.value;
       sel.innerHTML = opts; sel.__html = opts;
       if (cur && (rooms[cur] || (sel.id === "lbDest" && cur[0] === "!" && SIGNS[cur.slice(1)]))) sel.value = cur;
     }
@@ -1452,7 +1456,8 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     if (r.kind === "held") openSheet(id, { held: true }); else askIfBlank(id, r);
   }
 
-  if (document.fonts && document.fonts.ready) document.fonts.ready.then(drawPreview);
+  // Once the label font has loaded, redraw the preview even though the label hasn't changed.
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { previewKey = ""; drawPreview(); });
   refresh().then(fromLink);
 })();
 </script>
