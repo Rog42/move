@@ -25,6 +25,7 @@ The D1 database `move` already exists in the Cloudflare account and is loaded wi
 
 1. **The Worker.** It's called `move`, is connected to `Rog42/move`, and deploys on every push to `main` with `npx wrangler deploy`. Everything it needs is in `wrangler.toml`: the D1 binding (`DB` → `move`), the static files and the variables. There's nothing to set in the dashboard.
 2. **Add the domain.** In the Worker, go to Settings → Domains & Routes → Add → Custom domain and enter `move.rog42.net`. Cloudflare creates the DNS record and certificate. For this to work, rog42.net's DNS has to be on the same Cloudflare account.
+   - **Always https.** Every request runs the Worker first (`run_worker_first = true`). It sends any plain-http visit to the same address on https (301), and https responses carry HSTS (`max-age=31536000`), so a browser that has been here once keeps using https. Phones only allow the camera on a secure page. Cloudflare issues and renews the certificate on its own; there's nothing to install. Local `wrangler dev` stays on http.
 3. **Lock the checklists** with Cloudflare Access (Zero Trust → Access → Applications → Add → Self-hosted):
    - Application domains: `move.rog42.net/lists` and `move.rog42.net/api/lists`. Access paths cover everything under them.
    - Policy: Allow, with your and Lu's email addresses.
