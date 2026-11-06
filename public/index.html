@@ -491,44 +491,62 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
   }
 
   // ---------- Data ----------
+  // Replace an element's contents only when they've actually changed, so a refresh doesn't swap out
+  // the row or button under someone's finger.
+  function setHTML(el, html) { if (el.__html !== html) { el.innerHTML = html; el.__html = html; } }
+
+  // Every 4 s the phone asks for the state, saying which version it already has. If nothing has
+  // changed the server answers 304 with no body and nothing is redrawn, so the page stays still
+  // (no lost taps) and a weak mobile connection isn't kept busy with the whole box list.
+  let stateTag = "", printingAt = 0;
   async function refresh() {
     try {
-      const s = await api("/api/state");
+      const r = await fetch("/api/state", { cache: "no-store", headers: stateTag && loaded ? { "if-none-match": stateTag } : {} });
+      if (r.status === 304) return;
+      if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || "HTTP " + r.status); }
+      const s = await r.json();
+      stateTag = r.headers.get("etag") || "";
       rooms = s.rooms || {}; boxes = s.boxes || {}; signs = s.signs || {}; loaded = true;
       if (num(s.loadFrom)) loadAt = num(s.loadFrom);
       applyPrintSettings(s.settings && s.settings.print);
       render();
-    } catch (e) { if (!loaded) $("#register").innerHTML = `<div class="empty"><b>Can't reach the box list</b>${esc(e.message)}</div>`; }
+    } catch (e) { if (!loaded) setHTML($("#register"), `<div class="empty"><b>Can't reach the box list</b>${esc(e.message)}</div>`); }
   }
-  setInterval(() => { if (!document.hidden && $("#cam").hidden) refresh(); }, 4000);
+  // Leave the page alone while the print dialog is up (for a minute at most, in case a browser
+  // never says the dialog has closed).
+  window.addEventListener("beforeprint", () => { printingAt = Date.now(); });
+  window.addEventListener("afterprint", () => { printingAt = 0; });
+  setInterval(() => { if (!document.hidden && Date.now() - printingAt > 60000 && $("#cam").hidden) refresh(); }, 4000);
   document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
 
   // ---------- Render ----------
   function render() {
     const all = list();
-    $("#counts").innerHTML = STEPS.map(([k, l]) => `<div class="count"><b>${all.filter((b) => statusOf(b) === k).length}</b><span>${l}</span></div>`).join("");
+    setHTML($("#counts"), STEPS.map(([k, l]) => `<div class="count"><b>${all.filter((b) => statusOf(b) === k).length}</b><span>${l}</span></div>`).join(""));
     for (const sel of [$("#lbDest"), $("#mRoom")]) {
       if (document.activeElement === sel) continue;
       const cur = sel.value;
-      sel.innerHTML = `<option value="">Choose a room</option>` + savoyRooms().map((r) => `<option value="${esc(r.id)}">${esc(r.name)}</option>`).join("")
+      const opts = `<option value="">Choose a room</option>` + savoyRooms().map((r) => `<option value="${esc(r.id)}">${esc(r.name)}</option>`).join("")
         + (sel.id === "lbDest" ? [...new Set(Object.values(SIGNS).map((x) => x.group))].map((g) => `<optgroup label="${esc(g)}">${Object.entries(SIGNS).filter(([, x]) => x.group === g).map(([k, x]) => `<option value="!${k}">${esc(x.name)}</option>`).join("")}</optgroup>`).join("") : "");
+      if (sel.__html === opts) continue; // same rooms as last time: leave the list alone
+      sel.innerHTML = opts; sel.__html = opts;
       if (cur && (rooms[cur] || (sel.id === "lbDest" && cur[0] === "!" && SIGNS[cur.slice(1)]))) sel.value = cur;
     }
     const cats = [...new Set(all.map((b) => b.cat).filter(Boolean).concat(DEFAULT_CATS))];
-    $("#catList").innerHTML = cats.map((c) => `<option value="${esc(c)}"></option>`).join("");
+    setHTML($("#catList"), cats.map((c) => `<option value="${esc(c)}"></option>`).join(""));
     renderLog(); renderFilters(); renderRegister(); renderTickBar(); drawPreview(); renderMany(); renderQueue();
   }
 
   function renderLog() {
-    $("#log").innerHTML = log.slice(0, 5).map((e, i) => {
+    setHTML($("#log"), log.slice(0, 5).map((e, i) => {
       const b = boxes[e.id], need = b && !hasContents(b);
       return `<li><b>${esc(e.t)}</b> ${esc((b && whatText(b)) || "")} → ${esc(e.note)}${need ? ` <button class="linkbtn" type="button" data-addc="${esc(e.id)}">Add contents</button>` : ""}${i === 0 && e.undo ? ` <button class="linkbtn" type="button" data-undo="1">Undo</button>` : ""}</li>`;
-    }).join("");
+    }).join(""));
   }
   function renderFilters() {
     const missing = list().filter((b) => !hasContents(b)).length;
     const opts = [["all", "All"]].concat(STEPS, missing || filter === "nocat" ? [["nocat", `Contents to add (${missing})`]] : []);
-    $("#filters").innerHTML = opts.map(([k, l]) => `<button class="chip" type="button" data-filter="${k}" aria-pressed="${filter === k}">${l}</button>`).join("");
+    setHTML($("#filters"), opts.map(([k, l]) => `<button class="chip" type="button" data-filter="${k}" aria-pressed="${filter === k}">${l}</button>`).join(""));
   }
   const rowHTML = (b) => { const st = statusOf(b); return `<li class="brow"><label class="tick"><input type="checkbox" data-tick="${esc(b.id)}" aria-label="Tick ${tag(b)}" ${ticked.has(b.id) ? "checked" : ""}></label><button class="box ${b.id === hot ? "is-hot" : ""}" type="button" data-box="${esc(b.id)}"><span class="bn">${tag(b)}</span>${hasContents(b) ? `<span class="bc">${esc(whatText(b))}</span>` : `<span class="bc is-empty">Contents to add</span>`}<span class="st st-${st}">${STEP_NAME[st]}</span></button></li>`; };
   // ---------- Ticked boxes: move several to a stage at once ----------
@@ -613,9 +631,9 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     if (!loaded) return;
     const all = list(), tst = tests();
     const testHTML = tst.length ? `<section><div class="g-head"><h3>Test labels</h3><span>${plural(tst.length, "label", "labels")}</span><button class="linkbtn" type="button" id="delTests">${delTestsArmed ? "Tap again to delete them all" : "Delete all"}</button></div><ul class="boxes">${tickAllHTML(tst)}${tst.map(rowHTML).join("")}</ul></section>` : "";
-    if (!all.length) { $("#register").innerHTML = `<div class="groups"><div class="empty"><b>No boxes yet</b>Create the first label above. Numbers start at 001 and are never reused.</div>${testHTML}</div>`; return; }
+    if (!all.length) { setHTML($("#register"), `<div class="groups"><div class="empty"><b>No boxes yet</b>Create the first label above. Numbers start at 001 and are never reused.</div>${testHTML}</div>`); return; }
     const shown = filter === "all" ? all : filter === "nocat" ? all.filter((b) => !hasContents(b)) : all.filter((b) => statusOf(b) === filter);
-    if (!shown.length) { $("#register").innerHTML = `<div class="groups"><div class="empty">${filter === "nocat" ? "<b>Every box has its contents</b>Nothing left to fill in." : `<b>No ${esc(STEP_NAME[filter].toLowerCase())} boxes</b>Pick another filter to see the rest.`}</div>${testHTML}</div>`; return; }
+    if (!shown.length) { setHTML($("#register"), `<div class="groups"><div class="empty">${filter === "nocat" ? "<b>Every box has its contents</b>Nothing left to fill in." : `<b>No ${esc(STEP_NAME[filter].toLowerCase())} boxes</b>Pick another filter to see the rest.`}</div>${testHTML}</div>`); return; }
     const groups = savoyRooms().map((r) => ({ r, rows: shown.filter((b) => b.dest === r.id) })).filter((g) => g.rows.length);
     const loose = shown.filter((b) => !b.dest || !rooms[b.dest]);
     if (loose.length) groups.push({ r: null, rows: loose });
@@ -624,7 +642,7 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     const forced = filter !== "all";
     const hotKey = hot && boxes[hot] && !boxes[hot].test ? groupKey(boxes[hot]) : null;
     const isOpen = (key) => forced || openRooms.has(key) || key === hotKey;
-    $("#register").innerHTML = `<div class="groups ${forced ? "" : "is-foldable"}">${groups.map((g) => {
+    setHTML($("#register"), `<div class="groups ${forced ? "" : "is-foldable"}">${groups.map((g) => {
       const key = g.r ? g.r.id : "_none", open = isOpen(key);
       const inr = g.rows.filter((b) => statusOf(b) === "inroom" || statusOf(b) === "unpacked").length;
       const sw = g.r ? hexOf(g.r.colour) || "transparent" : "transparent", name = g.r ? esc(g.r.name) : "No room yet";
@@ -634,7 +652,7 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
           <i class="sw" style="--sw:${sw}"></i><h3>${name}</h3><span class="g-count">${count}</span><i class="chev" aria-hidden="true"></i>
           ${open ? "" : `<span class="g-nums">${g.rows.map(tag).join("  ")}</span>`}</button>
         ${open ? `<ul class="boxes">${tickAllHTML(g.rows)}${g.rows.map(rowHTML).join("")}</ul>` : ""}</section>`;
-    }).join("")}${testHTML}</div>`;
+    }).join("")}${testHTML}</div>`);
     const keys = groups.map((g) => (g.r ? g.r.id : "_none"));
     $("#foldAll").hidden = forced || keys.length < 2;
     $("#foldAll").textContent = keys.some((k) => !isOpen(k)) ? "Open all rooms" : "Close all rooms";
@@ -729,16 +747,22 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     const d = "→ " + dest, fsD = fitFont(c, d, W - 2 * pad, barH * 0.7);
     c.fillText(d, pad, H - barH + Math.round((barH - fsD) / 2));
   }
+  let previewKey = "";
   function drawPreview() {
     const cur = current && boxes[current] ? Object.assign({ id: current }, boxes[current]) : null;
     // "Goes to" Vinnies or Sell / Give away: a plain label with no number. Creating one puts it on To print.
     const made = !cur && current && signs[current] ? signs[current] : null, sign = signOf();
-    if (cur) drawLabel($("#lbCanvas"), cur, false);
-    else if (made) drawSign($("#lbCanvas"), made.kind, made.cat);
-    else if (sign) drawSign($("#lbCanvas"), sign, $("#lbCat").value.trim(), true);
-    else {
-      const test = $("#lbTest").checked;
-      drawLabel($("#lbCanvas"), { n: nextOf(test ? tests() : list()), test, cat: $("#lbCat").value.trim(), dest: $("#lbDest").value }, true);
+    // Drawing the label (and its QR code) is the slow part, so only redraw when what it shows changes.
+    const test = $("#lbTest").checked, cat = $("#lbCat").value.trim(), dest = $("#lbDest").value;
+    const draft = !cur && !made && !sign ? { n: nextOf(test ? tests() : list()), test, cat, dest } : null;
+    const roomOf = (b) => (b && b.dest && rooms[b.dest]) || null;
+    const key = JSON.stringify([size, cur, roomOf(cur), made, sign, sign ? cat : "", draft, roomOf(draft)]);
+    if (key !== previewKey) {
+      previewKey = key;
+      if (cur) drawLabel($("#lbCanvas"), cur, false);
+      else if (made) drawSign($("#lbCanvas"), made.kind, made.cat);
+      else if (sign) drawSign($("#lbCanvas"), sign, cat, true);
+      else drawLabel($("#lbCanvas"), draft, true);
     }
     $("#lbTestRow").hidden = !!sign;
     $("#lbCreate").textContent = sign ? `Create ${SIGNS[sign].name} ${SIGNS[sign].noun}` : $("#lbTest").checked ? `Create test label T${pad3(nextOf(tests()))}` : `Create box ${pad3(nextOf(list()))}`;
@@ -905,12 +929,12 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     $("#queueText").innerHTML = !q.length ? "Nothing waiting to print. To print labels again, type their numbers below."
       : !sel.length ? `${countText(q)} waiting, none ticked.`
       : `${countText(q)} waiting${sel.length < q.length ? `, ${sel.length} ticked` : ""}. At ${esc(sizeName)} and ${plural(copies, "side", "sides")} that's ${plural(labels, "label", "labels")}${sheets ? ` on ${plural(sheets, "sheet", "sheets")}${spare ? `, with ${plural(spare, "spot", "spots")} left empty on the last one` : ""}` : ""}.`;
-    $("#qList").innerHTML = q.map((b) => {
+    setHTML($("#qList"), q.map((b) => {
       const off = qOff.has(b.id);
       if (b.kind) return `<li><label class="${off ? "is-off" : ""}"><input type="checkbox" data-q="${esc(b.id)}" ${off ? "" : "checked"}><b class="q-sign">${esc(SIGNS[b.kind].name)}</b><span>${esc(b.cat || (SIGNS[b.kind].group === "Stickers" ? "Sticker" : SIGNS[b.kind].group))}</span></label></li>`;
       const r = rooms[b.dest];
       return `<li><label class="${off ? "is-off" : ""}" style="--sw:${r ? hexOf(r.colour) || "var(--line)" : "var(--line)"}"><input type="checkbox" data-q="${esc(b.id)}" ${off ? "" : "checked"}><b>${tag(b)}</b><span>${esc(b.cat || (r ? r.name : ""))}</span></label></li>`;
-    }).join("");
+    }).join(""));
     $(".qsel").hidden = q.length < 2;
     $("#queuePrint").textContent = sel.length ? `Print ${sel.length === q.length ? "all" : "ticked"} (${plural(labels, "label", "labels")})` : "Print ticked";
     $("#queuePrint").disabled = !sel.length; $("#queueSkip").disabled = !sel.length;

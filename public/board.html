@@ -362,14 +362,20 @@ body.is-dragging, body.is-dragging * { cursor: grabbing !important; }
   $("#menuX").addEventListener("click", closeMenu);
   document.addEventListener("click", (e) => { if (!$("#menu").hidden && !e.target.closest("#menu") && !e.target.closest(".card")) closeMenu(); });
 
+  // Sends the version it already has; 304 means nothing changed, so there's nothing to download or redraw.
+  let stateTag = "";
   async function refresh() {
     try {
-      const r = await fetch("/api/state", { cache: "no-store" });
-      if (!r.ok) throw new Error("HTTP " + r.status);
-      const s = await r.json();
-      rooms = s.rooms || {}; boxes = s.boxes || {}; okAt = Date.now();
-      // A move still on its way to the server stays where it was dropped.
-      pending.forEach((st, id) => { if (boxes[id]) boxes[id] = Object.assign({}, boxes[id], { status: st }); });
+      const r = await fetch("/api/state", { cache: "no-store", headers: stateTag ? { "if-none-match": stateTag } : {} });
+      if (r.status === 304) okAt = Date.now();
+      else {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        const s = await r.json();
+        stateTag = r.headers.get("etag") || "";
+        rooms = s.rooms || {}; boxes = s.boxes || {}; okAt = Date.now();
+        // A move still on its way to the server stays where it was dropped.
+        pending.forEach((st, id) => { if (boxes[id]) boxes[id] = Object.assign({}, boxes[id], { status: st }); });
+      }
     } catch (e) { /* keep the last board on screen; the footer says it's stale */ }
     if (okAt && !(drag && drag.active)) render(false);
     const stale = okAt && Date.now() - okAt > 20000;
