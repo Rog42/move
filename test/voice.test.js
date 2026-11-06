@@ -27,6 +27,8 @@ test("run-together digits are split only when there's one reading", () => {
   assert.deepEqual(p("loaded 999999", small), { stage: "loaded", ids: [], unclear: ["999999"] });
   // "twelve fifteen" run together: 1215 can only be 12 15
   assert.deepEqual(p("packed 1215").ids, ids(12, 15));
+  // a 4-digit number that is a box stays one box (from the code review)
+  assert.deepEqual(parseVoice("packed 1234", new Set([12, 34, 1234])).ids, ["b1234"]);
   // mixed lengths aren't guessed
   assert.deepEqual(p("packed 12115").unclear, ["12115"]);
   // times and decimals are two numbers

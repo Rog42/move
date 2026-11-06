@@ -1229,7 +1229,7 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
   // ticked boxes (each with {from}, so another phone's scan isn't undone), shown, and read back.
   const canRecord = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder);
   $("#micBtn").hidden = !canRecord;
-  let voice = null, voiceBusy = false, voiceLast = null, speechReady = false;
+  let voice = null, voiceBusy = false, voiceStarting = false, voiceLast = null, speechReady = false;
   try { if (localStorage.getItem("voiceSpeak") === "0") $("#vSpeak").checked = false; } catch (e) {}
   $("#vSpeak").addEventListener("change", () => { try { localStorage.setItem("voiceSpeak", $("#vSpeak").checked ? "1" : "0"); } catch (e) {} });
   const sayNum = (id) => (id[0] === "t" ? "test " : "") + String(parseInt(id.slice(1), 10));
@@ -1250,13 +1250,17 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     $("#micLabel").textContent = label || "Say numbers";
     $("#micSub").hidden = state !== "rec";
   }
+  // The button is locked while the phone asks for the microphone, so a second tap can't start a
+  // second recording that nothing would stop.
   async function startVoice() {
     readySpeech();
+    voiceStarting = true; setMic("busy", "Starting…");
     let stream;
     try { stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } }); }
-    catch (e) { toast(e && e.name === "NotAllowedError" ? "The microphone is blocked. Allow it for this site, or type the numbers." : "Couldn't start the microphone."); return; }
+    catch (e) { voiceStarting = false; setMic("idle"); toast(e && e.name === "NotAllowedError" ? "The microphone is blocked. Allow it for this site, or type the numbers." : "Couldn't start the microphone."); return; }
     let rec;
-    try { rec = new MediaRecorder(stream); } catch (e) { stream.getTracks().forEach((t) => t.stop()); toast("This browser can't record. Try Safari."); return; }
+    try { rec = new MediaRecorder(stream); } catch (e) { stream.getTracks().forEach((t) => t.stop()); voiceStarting = false; setMic("idle"); toast("This browser can't record. Try Safari."); return; }
+    voiceStarting = false;
     const chunks = [];
     rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
     voice = { stream, rec, chunks, t0: Date.now() };
@@ -1293,7 +1297,7 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     }
     voiceBusy = false; setMic("idle");
   }
-  $("#micBtn").addEventListener("click", () => { if (voiceBusy) return; if (voice) stopVoice(); else startVoice(); });
+  $("#micBtn").addEventListener("click", () => { if (voiceBusy || voiceStarting) return; if (voice) stopVoice(); else startVoice(); });
   // Whatever the phone recorded (mp4 on iPhone, webm elsewhere) -> 16 kHz mono 16-bit WAV, which
   // Whisper always reads, at about 32 KB a second.
   async function toWav(blob) {

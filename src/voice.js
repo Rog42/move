@@ -148,6 +148,7 @@ export function parseVoice(text, knownNumbers = new Set()) {
     const prev = flat[i - 1];
     if ((prev === "t" || prev === "test" || prev === "tee") && tok.length <= 3) { if (+tok > 0) add("t" + pad3(+tok)); continue; }
     if (tok.length <= 3) { if (+tok > 0) add("b" + pad3(+tok)); continue; }
+    if (knownNumbers.has(+tok)) { add("b" + pad3(+tok)); continue; } // a real 4-digit box, not two run together
     const ways = splits(tok, knownNumbers);
     if (ways.length === 1) ways[0].forEach((n) => add("b" + pad3(n)));
     else unclear.push(tok);
