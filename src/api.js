@@ -1,7 +1,7 @@
 // Move app API over a D1 database bound as DB. Called from src/index.js for every /api/* request.
 //
 // Public (box scanning):
-//   GET    /api/state                 rooms + boxes + signs
+//   GET    /api/state                 rooms + boxes + signs (ETag; 304 when the caller's copy is current)
 //   POST   /api/boxes                 create the next numbered box {cat, dest, test?}
 //   POST   /api/boxes/batch           create many {items: [{cat, dest}], test?}, consecutive numbers
 //   POST   /api/boxes/printed         mark labels printed {ids, printed?} (unprinted = To print list); takes sign ids too
@@ -176,8 +176,16 @@ export async function handleApi(request, env, parts) {
   try {
     // ---------- Boxes (public) ----------
     if (parts[0] === "state" && parts.length === 1 && method === "GET") {
+      // Phones and boards ask every few seconds. Every write bumps a doc's updated_at, so the count,
+      // newest and sum of updated_at change whenever anything in the state does (adds, edits, deletes).
+      // If the caller already has that version (If-None-Match), answer 304 with no body.
+      const v = await DB.prepare("SELECT COUNT(*) AS n, MAX(updated_at) AS t, SUM(updated_at) AS s FROM docs WHERE col IN ('rooms', 'boxes', 'signs', 'settings')").first();
+      const etag = `W/"${v ? `${v.n}-${v.t}-${v.s}` : "0"}-${loadFrom(env)}"`;
+      if (request.headers.get("if-none-match") === etag) return new Response(null, { status: 304, headers: { etag, "cache-control": "no-store" } });
       const [rooms, boxes, signs, print] = await Promise.all([collection(DB, "rooms"), collection(DB, "boxes"), collection(DB, "signs"), getDoc(DB, "settings", "print")]);
-      return json({ rooms, boxes, signs, settings: { print: { ...PRINT_DEFAULTS, ...(print ? print.data : {}) } }, now: Date.now(), loadFrom: loadFrom(env) });
+      const res = json({ rooms, boxes, signs, settings: { print: { ...PRINT_DEFAULTS, ...(print ? print.data : {}) } }, now: Date.now(), loadFrom: loadFrom(env) });
+      res.headers.set("etag", etag);
+      return res;
     }
 
     if (parts[0] === "settings" && parts[1] === "print" && parts.length === 2 && method === "PUT") {
