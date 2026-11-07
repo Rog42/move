@@ -152,6 +152,8 @@ function cleanBoxFields(body) {
   if (typeof body.cat === "string") out.cat = body.cat.trim().slice(0, 40);
   if (body.dest === null || (typeof body.dest === "string" && ID_RE.test(body.dest))) out.dest = body.dest;
   if (typeof body.status === "string" && STEPS.includes(body.status)) out.status = body.status;
+  // Where the box actually is, when it's ended up in a room other than its own. Null clears it.
+  if (body.foundIn === null || (typeof body.foundIn === "string" && ID_RE.test(body.foundIn))) out.foundIn = body.foundIn;
   return out;
 }
 
@@ -326,6 +328,8 @@ export async function handleApi(request, env, parts) {
             if (Date.now() < at) return json({ error: `Loading opens ${loadingText(at)}. Until then boxes can only go as far as Packed.`, locked: true, loadFrom: at }, 409);
           }
           const next = { ...doc.data, ...f };
+          // In its own room after all (moved there, or its room changed to where it is): nothing to note.
+          if (!next.foundIn || next.foundIn === next.dest) delete next.foundIn;
           if (f.status) next.statusAt = new Date().toISOString();
           if (body.resetScan === true) next.scannedAt = null;
           const res = await DB.prepare("UPDATE docs SET data = ?, updated_at = ? WHERE col = 'boxes' AND id = ? AND updated_at = ?")

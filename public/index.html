@@ -64,7 +64,7 @@ h1, h2, h3 { margin: 0; text-wrap: balance; }
 .linkbtn { background: none; border: 0; padding: 0; color: var(--accent); font-weight: 600; font-size: 13px; }
 .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .numform { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
-input[type="text"], input[inputmode], select { width: 100%; min-width: 0; padding: 11px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); font-size: 16px; }
+input[type="text"], input[type="search"], input[inputmode], select { width: 100%; min-width: 0; padding: 11px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); font-size: 16px; }
 #numIn { font-family: var(--f-mono); letter-spacing: .08em; }
 #numIn::placeholder { font-family: var(--f-body); letter-spacing: 0; color: var(--muted); }
 .fld { display: flex; flex-direction: column; gap: 5px; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
@@ -125,6 +125,14 @@ details.fold[open] .chev { transform: rotate(-135deg); margin-bottom: -4px; }
 .queue-text b { font-family: var(--f-mono); font-weight: 500; }
 .queue-confirm { border: 1px dashed var(--tape); background: var(--tape-soft); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; font-size: 14px; }
 .bc.is-empty { color: var(--muted); font-style: italic; }
+/* Find: results and the wrong-room list */
+.find-out { display: flex; flex-direction: column; gap: 8px; }
+.find-out:empty { display: none; }
+.find-n { margin: 0; font-size: 12.5px; color: var(--muted); }
+.where { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; font-size: 12.5px; color: var(--muted); font-style: normal; }
+.wr { display: block; font-size: 12.5px; font-weight: 600; color: var(--late); font-style: normal; }
+.where .wr { flex-basis: 100%; }
+ul.boxes li.brow .moved { flex: none; padding: 0 12px; }
 .copies output { min-width: 4.6em; text-align: center; font-size: 13.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
 
 .filters { display: flex; gap: 6px; flex-wrap: wrap; }
@@ -243,6 +251,12 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
 
 <main class="wrap main">
   <section class="counts" id="counts" aria-label="Boxes by stage"></section>
+
+  <section class="card" id="findCard" aria-labelledby="findH">
+    <h2 id="findH">Find</h2>
+    <input type="search" id="findIn" placeholder="Box number, what's in it, or a room" aria-label="Find a box" autocomplete="off" spellcheck="false" enterkeyhint="search">
+    <div class="find-out" id="findOut" aria-live="polite"></div>
+  </section>
 
   <section class="card" aria-labelledby="scanH">
     <h2 id="scanH">Scan</h2>
@@ -376,6 +390,7 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     <div class="fld"><span>Photos of what's in it</span><div class="photos" id="shPhotos"></div></div>
     <input type="file" id="shPhotoIn" class="vh" accept="image/*" capture="environment" tabindex="-1" aria-hidden="true">
     <label class="fld">Goes to <select id="shDest"></select></label>
+    <label class="fld">Where it is now <select id="shFound"></select></label>
     <div class="row">
       <button class="btn btn-primary" type="button" id="shSave">Save changes</button>
       <button class="btn" type="button" id="shLabel">Show label</button>
@@ -552,7 +567,7 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     }
     const cats = [...new Set(all.map((b) => b.cat).filter(Boolean).concat(DEFAULT_CATS))];
     setHTML($("#catList"), cats.map((c) => `<option value="${esc(c)}"></option>`).join(""));
-    renderLog(); renderFilters(); renderRegister(); renderTickBar(); drawPreview(); renderMany(); renderQueue();
+    renderLog(); renderFind(); renderFilters(); renderRegister(); renderTickBar(); drawPreview(); renderMany(); renderQueue();
   }
 
   function renderLog() {
@@ -566,7 +581,69 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     const opts = [["all", "All"]].concat(STEPS, missing || filter === "nocat" ? [["nocat", `Contents to add (${missing})`]] : []);
     setHTML($("#filters"), opts.map(([k, l]) => `<button class="chip" type="button" data-filter="${k}" aria-pressed="${filter === k}">${l}</button>`).join(""));
   }
-  const rowHTML = (b) => { const st = statusOf(b); return `<li class="brow"><label class="tick"><input type="checkbox" data-tick="${esc(b.id)}" aria-label="Tick ${tag(b)}" ${ticked.has(b.id) ? "checked" : ""}></label><button class="box ${b.id === hot ? "is-hot" : ""}" type="button" data-box="${esc(b.id)}"><span class="bn">${tag(b)}</span>${hasContents(b) ? `<span class="bc">${esc(whatText(b))}</span>` : `<span class="bc is-empty">Contents to add</span>`}<span class="st st-${st}">${STEP_NAME[st]}</span></button></li>`; };
+  const rowHTML = (b) => { const st = statusOf(b); return `<li class="brow"><label class="tick"><input type="checkbox" data-tick="${esc(b.id)}" aria-label="Tick ${tag(b)}" ${ticked.has(b.id) ? "checked" : ""}></label><button class="box ${b.id === hot ? "is-hot" : ""}" type="button" data-box="${esc(b.id)}"><span class="bn">${tag(b)}</span>${hasContents(b) ? `<span class="bc">${esc(whatText(b))}${nowInHTML(b)}</span>` : `<span class="bc is-empty">Contents to add${nowInHTML(b)}</span>`}<span class="st st-${st}">${STEP_NAME[st]}</span></button></li>`; };
+
+  // ---------- Find ----------
+  // Words match the start of a word in what's in it, its room (and the room's colour), where it
+  // actually is, or its stage; all the words have to match. A plain number is a box number
+  // (T and a number for a test label). Boxes noted as being in another room are listed until moved.
+  const wrongRoom = (b) => !!(b.foundIn && b.foundIn !== b.dest && rooms[b.foundIn]);
+  const nowInHTML = (b) => (wrongRoom(b) ? `<small class="wr">Now in ${esc(roomName(b.foundIn))}</small>` : "");
+  const normQ = (s) => String(s || "").toLowerCase().normalize("NFKD").replace(/[̀-ͯ]/g, "");
+  const reEsc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const FIND_SKIP = new Set(["box", "boxes", "item", "items", "label", "the", "a", "an", "of", "no", "number", "where", "is", "my", "our"]);
+  function findBoxes(q) {
+    const words = normQ(q).split(/[\s,]+/).map((w) => w.replace(/^#/, "")).filter((w) => w && !FIND_SKIP.has(w));
+    if (!words.length) return null;
+    const res = words.map((w) => new RegExp("(^|[^a-z0-9])" + reEsc(w)));
+    const nums = words.map((w) => /^(t?)0*(\d{1,4})$/.exec(w));
+    const scored = [];
+    for (const b of all_()) {
+      const r = rooms[b.dest], text = normQ([b.cat, r && r.name, r && r.colour && r.colour.name, wrongRoom(b) ? roomName(b.foundIn) : "", STEP_NAME[statusOf(b)]].join(" "));
+      let byNum = false;
+      const ok = words.every((w, i) => {
+        const m = nums[i];
+        if (m && !!m[1] === !!b.test && b.n === +m[2]) { byNum = true; return true; }
+        return res[i].test(text);
+      });
+      if (ok) scored.push({ b, byNum });
+    }
+    return scored.sort((x, y) => (y.byNum - x.byNum) || (!!x.b.test - !!y.b.test) || (x.b.n - y.b.n)).map((x) => x.b);
+  }
+  const findRowHTML = (b, moved) => {
+    const st = statusOf(b), r = rooms[b.dest];
+    return `<li class="brow"><button class="box" type="button" data-box="${esc(b.id)}"><span class="bn">${tag(b)}</span><span class="bc ${hasContents(b) ? "" : "is-empty"}">${hasContents(b) ? esc(whatText(b)) : "Contents to add"}
+      <small class="where"><i class="sw" style="--sw:${r ? hexOf(r.colour) || "transparent" : "transparent"}"></i>${r ? esc(r.name) : "No room yet"}${wrongRoom(b) ? `<b class="wr">Now in ${esc(roomName(b.foundIn))}</b>` : ""}</small></span>
+      <span class="st st-${st}">${STEP_NAME[st]}</span></button>${moved ? `<button class="linkbtn moved" type="button" data-moved="${esc(b.id)}">Moved it</button>` : ""}</li>`;
+  };
+  let findQ = "";
+  function renderFind() {
+    if (!loaded) return;
+    const hits = findBoxes(findQ);
+    if (hits) {
+      const top = hits.slice(0, 40);
+      setHTML($("#findOut"), hits.length
+        ? `<p class="find-n">${plural(hits.length, "match", "matches")}${hits.length > top.length ? `, showing the first ${top.length}. Add a word to narrow it down.` : ""}</p><ul class="boxes">${top.map((b) => findRowHTML(b, false)).join("")}</ul>`
+        : `<p class="hint">Nothing matches “${esc(findQ.trim())}”. Try a box number, a word from what's in it, or a room.</p>`);
+      return;
+    }
+    const wrong = all_().filter(wrongRoom).sort((x, y) => (!!x.test - !!y.test) || (x.n - y.n));
+    setHTML($("#findOut"), wrong.length
+      ? `<div class="g-head"><h3>In the wrong room</h3><span>${plural(wrong.length, "box", "boxes")}</span></div><ul class="boxes">${wrong.map((b) => findRowHTML(b, true)).join("")}</ul>`
+      : `<p class="hint">Type a box number, a word from what's in it (like kettle), or a room. If a box has ended up in the wrong room, open it and set where it is now. It's listed here until it's moved.</p>`);
+  }
+  $("#findIn").addEventListener("input", () => { findQ = $("#findIn").value; renderFind(); });
+  $("#findIn").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("#findIn").blur(); } });
+  $("#findOut").addEventListener("click", async (e) => {
+    const mv = e.target.closest("[data-moved]");
+    if (mv) {
+      const id = mv.dataset.moved; mv.disabled = true;
+      try { const r = await api("/api/boxes/" + id, { method: "PATCH", body: JSON.stringify({ foundIn: null }) }); boxes[id] = r.box; toast(`${tag(r.box)} is back in ${roomName(r.box.dest) || "its room"}.`); render(); }
+      catch (err) { mv.disabled = false; toast("Couldn't save that. Check the connection."); }
+      return;
+    }
+    const b = e.target.closest("[data-box]"); if (b) openSheet(b.dataset.box);
+  });
   // ---------- Ticked boxes: move several to a stage at once ----------
   // Tick boxes in All boxes (or Tick all in a room), pick a stage in the bar at the bottom, and Move.
   // The bar suggests the next stage for the least-advanced ticked box (Packed while any aren't packed).
@@ -1342,6 +1419,8 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     $("#shCat").value = b.cat || "";
     delPhotoArmed = null; renderSheetPhotos();
     $("#shDest").innerHTML = `<option value="">No room yet</option>` + savoyRooms().map((r) => `<option value="${esc(r.id)}" ${r.id === b.dest ? "selected" : ""}>${esc(r.name)}</option>`).join("");
+    $("#shFound").innerHTML = `<option value="">${b.dest && rooms[b.dest] ? `In its own room (${esc(roomName(b.dest))})` : "Not noted"}</option>`
+      + savoyRooms().filter((r) => r.id !== b.dest).map((r) => `<option value="${esc(r.id)}" ${r.id === b.foundIn ? "selected" : ""}>${esc(r.name)}</option>`).join("");
     removeArmed = false; $("#shRemove").textContent = "Remove";
     $("#shReprint").hidden = !b.printedAt; // not printed yet: it's already waiting in To print
     const focus = ask || !!(opts && opts.focus);
@@ -1426,7 +1505,14 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
   $("#shSave").addEventListener("click", async () => {
     if (!sheetId) return;
     const cat = $("#shCat").value.trim();
-    try { const r = await api("/api/boxes/" + sheetId, { method: "PATCH", body: JSON.stringify({ cat, dest: $("#shDest").value || null }) }); const roomChanged = (boxes[sheetId] && boxes[sheetId].dest) !== r.box.dest; boxes[sheetId] = r.box; toast(roomChanged ? "Saved. Reprint the label, since the room changed." : "Saved."); closeSheet(); render(); }
+    try {
+      const before = boxes[sheetId] || {};
+      const r = await api("/api/boxes/" + sheetId, { method: "PATCH", body: JSON.stringify({ cat, dest: $("#shDest").value || null, foundIn: $("#shFound").value || null }) });
+      const roomChanged = before.dest !== r.box.dest, nowWrong = wrongRoom(r.box) && !wrongRoom(before);
+      boxes[sheetId] = r.box;
+      toast(roomChanged ? "Saved. Reprint the label, since the room changed." : nowWrong ? `Saved. It's on the wrong-room list under Find until it's moved.` : "Saved.");
+      closeSheet(); render();
+    }
     catch (err) { toast("Couldn't save that change."); }
   });
   $("#shCat").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("#shSave").click(); } });
