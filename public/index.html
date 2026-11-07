@@ -102,6 +102,16 @@ details.fold > summary::-webkit-details-marker { display: none; }
 details.fold .chev { width: 9px; height: 9px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(45deg); margin: 0 4px 4px 0; transition: transform .15s ease; flex: none; }
 details.fold[open] .chev { transform: rotate(-135deg); margin-bottom: -4px; }
 .fold-body { display: flex; flex-direction: column; gap: 12px; padding: 0 16px 16px; }
+/* Tape instead of a label: a strip of the room's colour with the number to write on it */
+.tape-form { display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 10px; align-items: end; }
+@media (max-width: 600px) { .tape-form { grid-template-columns: 1fr 1fr; } .tape-form .fld:first-child { grid-column: 1 / -1; } }
+.tape-form #tpAdd { height: 44px; }
+.tape-out { display: flex; gap: 16px; align-items: center; padding: 12px; border: 1px dashed var(--line); border-radius: 10px; background: var(--bg); font-size: 14px; }
+.tape-out[hidden] { display: none; }
+.tape-out p { margin: 0; }
+.tape { flex: none; min-width: 112px; padding: 8px 16px; text-align: center; background: var(--tp); color: var(--tpi); border-radius: 2px; transform: rotate(-2deg); box-shadow: 0 1px 3px rgb(0 0 0 / .18), inset 0 0 0 1px rgb(0 0 0 / .1); }
+.tape b { font: 600 30px/1.1 var(--f-mono); letter-spacing: .04em; }
+.tp { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 3px; background: var(--tape-soft); color: var(--tape); font-size: 10.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; font-style: normal; vertical-align: 1px; }
 .mlist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .mlist li { display: flex; gap: 10px; align-items: center; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); font-size: 14px; }
 .mlist li b { font-family: var(--f-mono); font-weight: 500; min-width: 2.4em; }
@@ -302,6 +312,20 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     </div>
   </section>
 
+  <details class="card fold" id="tapeCard">
+    <summary><span class="fold-t"><b>Tape instead of a label</b><span>For painted or varnished furniture: write the number on the room's coloured tape</span></span><i class="chev" aria-hidden="true"></i></summary>
+    <div class="fold-body">
+      <p class="hint">Gets a number like a box, so you can find it, tick it or scan it by number, but nothing goes on To print.</p>
+      <div class="tape-form">
+        <label class="fld">What is it <input type="text" id="tpCat" list="catList" maxlength="40" placeholder="e.g. Dining table" autocomplete="off"></label>
+        <label class="fld">Goes to <select id="tpDest"></select></label>
+        <label class="fld">Where it's at <select id="tpStage"></select></label>
+        <button class="btn btn-primary" type="button" id="tpAdd">Add item</button>
+      </div>
+      <div class="tape-out" id="tpOut" hidden></div>
+    </div>
+  </details>
+
   <details class="card fold" id="manyCard">
     <summary><span class="fold-t"><b>Make several labels</b><span id="manySub">A room's worth at once, like 4 boxes for the kitchen</span></span><i class="chev" aria-hidden="true"></i></summary>
     <div class="fold-body">
@@ -372,10 +396,11 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     <div class="seg" id="sheetSeg" role="group" aria-label="Stage"></div>
     <p class="sheet-lock" id="sheetLock" hidden></p>
     <p class="sheet-ask" id="sheetAsk" hidden></p>
-    <label class="fld">What's in it (optional) <input type="text" id="shCat" maxlength="40" list="catList" autocomplete="off"></label>
+    <label class="fld"><span id="shCatT">What's in it (optional)</span> <input type="text" id="shCat" maxlength="40" list="catList" autocomplete="off"></label>
     <div class="fld"><span>Photos of what's in it</span><div class="photos" id="shPhotos"></div></div>
     <input type="file" id="shPhotoIn" class="vh" accept="image/*" capture="environment" tabindex="-1" aria-hidden="true">
     <label class="fld">Goes to <select id="shDest"></select></label>
+    <label class="testtick"><input type="checkbox" id="shTape"> Marked with coloured tape, no label</label>
     <div class="row">
       <button class="btn btn-primary" type="button" id="shSave">Save changes</button>
       <button class="btn" type="button" id="shLabel">Show label</button>
@@ -501,7 +526,7 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
   // changed the server answers 304 with no body and nothing is redrawn, so the page stays still
   // (no lost taps) and a weak mobile connection isn't kept busy with the whole box list.
   let stateTag = "", printingAt = 0, sharedPrint = null, drawnAt = 0, selHeld = false;
-  const roomSels = () => [$("#lbDest"), $("#mRoom")];
+  const roomSels = () => [$("#lbDest"), $("#mRoom"), $("#tpDest")];
   const printSig = () => [size, copies, sheetAdj.top, sheetAdj.bottom].join();
   // Loading times (the default and each room's own) that have come round since the last redraw.
   // Nothing on the server changes when one passes, so the version stays the same.
@@ -552,7 +577,7 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     }
     const cats = [...new Set(all.map((b) => b.cat).filter(Boolean).concat(DEFAULT_CATS))];
     setHTML($("#catList"), cats.map((c) => `<option value="${esc(c)}"></option>`).join(""));
-    renderLog(); renderFilters(); renderRegister(); renderTickBar(); drawPreview(); renderMany(); renderQueue();
+    renderLog(); renderFilters(); renderRegister(); renderTickBar(); drawPreview(); renderTape(); renderMany(); renderQueue();
   }
 
   function renderLog() {
@@ -566,7 +591,39 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     const opts = [["all", "All"]].concat(STEPS, missing || filter === "nocat" ? [["nocat", `Contents to add (${missing})`]] : []);
     setHTML($("#filters"), opts.map(([k, l]) => `<button class="chip" type="button" data-filter="${k}" aria-pressed="${filter === k}">${l}</button>`).join(""));
   }
-  const rowHTML = (b) => { const st = statusOf(b); return `<li class="brow"><label class="tick"><input type="checkbox" data-tick="${esc(b.id)}" aria-label="Tick ${tag(b)}" ${ticked.has(b.id) ? "checked" : ""}></label><button class="box ${b.id === hot ? "is-hot" : ""}" type="button" data-box="${esc(b.id)}"><span class="bn">${tag(b)}</span>${hasContents(b) ? `<span class="bc">${esc(whatText(b))}</span>` : `<span class="bc is-empty">Contents to add</span>`}<span class="st st-${st}">${STEP_NAME[st]}</span></button></li>`; };
+  const rowHTML = (b) => { const st = statusOf(b); return `<li class="brow"><label class="tick"><input type="checkbox" data-tick="${esc(b.id)}" aria-label="Tick ${tag(b)}" ${ticked.has(b.id) ? "checked" : ""}></label><button class="box ${b.id === hot ? "is-hot" : ""}" type="button" data-box="${esc(b.id)}"><span class="bn">${tag(b)}</span>${hasContents(b) ? `<span class="bc">${esc(whatText(b))}${tapeTag(b)}</span>` : `<span class="bc is-empty">Contents to add${tapeTag(b)}</span>`}<span class="st st-${st}">${STEP_NAME[st]}</span></button></li>`; };
+  const tapeTag = (b) => (b.tape ? `<small class="tp" title="Marked with tape, no label">Tape</small>` : "");
+
+  // ---------- Tape instead of a label ----------
+  // Furniture with a painted or varnished finish gets the room's coloured tape with its number
+  // written on, instead of a sticky label. It's numbered and tracked like a box; nothing to print.
+  $("#tpStage").innerHTML = STEPS.map(([k, l]) => `<option value="${k}">${k === "labelled" ? "Not moved yet" : l}</option>`).join("");
+  $("#tpStage").value = "inroom";
+  const inkOn = (hex) => { const v = parseInt(hex.slice(1), 16); return 0.299 * (v >> 16) + 0.587 * ((v >> 8) & 255) + 0.114 * (v & 255) > 150 ? "#17201C" : "#FFFFFF"; };
+  let tapeLast = null;
+  function renderTape() {
+    const b = tapeLast && boxes[tapeLast];
+    $("#tpOut").hidden = !b;
+    if (!b) return;
+    const r = rooms[b.dest], hex = (r && hexOf(r.colour)) || "#E9DFC4", colour = r && r.colour && r.colour.name ? r.colour.name.toLowerCase() : "";
+    setHTML($("#tpOut"), `<div class="tape" style="--tp:${hex};--tpi:${inkOn(hex)}"><b>${tag(b)}</b></div>
+      <p>Write <b>${tag(b)}</b> on ${colour ? `<b>${esc(colour)}</b> tape` : "the tape"} and stick it on the ${esc(b.cat || "item")}. It's under ${esc(roomName(b.dest) || "No room yet")} at ${esc(STEP_NAME[statusOf(b)])}.</p>`);
+  }
+  $("#tpAdd").addEventListener("click", async () => {
+    const cat = $("#tpCat").value.trim(), dest = $("#tpDest").value || null, status = $("#tpStage").value, btn = $("#tpAdd");
+    if (!cat) { toast("Say what it is, like Dining table."); $("#tpCat").focus(); return; }
+    if (!dest) { toast("Pick the room it goes to, so you know which tape colour."); $("#tpDest").focus(); return; }
+    btn.disabled = true;
+    try {
+      const r = await api("/api/boxes", { method: "POST", body: JSON.stringify({ cat, dest, tape: true, status }) });
+      boxes[r.id] = r.box; tapeLast = r.id; hot = r.id;
+      $("#tpCat").value = "";
+      toast(`Item ${tag(r.box)} added`);
+      render();
+    } catch (e) { toast(e.status === 409 ? e.message : "Couldn't add it: " + e.message); }
+    finally { btn.disabled = false; }
+  });
+  $("#tpCat").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("#tpAdd").click(); } });
   // ---------- Ticked boxes: move several to a stage at once ----------
   // Tick boxes in All boxes (or Tick all in a room), pick a stage in the bar at the bottom, and Move.
   // The bar suggests the next stage for the least-advanced ticked box (Packed while any aren't packed).
@@ -922,7 +979,7 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
 
   // ---------- To print: every label not printed yet, shared across phones and computers ----------
   let lastBatch = [];
-  const queue = () => { const q = all_().filter((b) => !b.printedAt); return q.filter((b) => !b.test).concat(pendingSigns(), q.filter((b) => b.test)); };
+  const queue = () => { const q = all_().filter((b) => !b.printedAt && !b.tape); return q.filter((b) => !b.test).concat(pendingSigns(), q.filter((b) => b.test)); };
   function ranges(rows) {
     const out = [];
     let s = null, p = null;
@@ -1000,14 +1057,15 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
   $("#reprintForm").addEventListener("submit", async (e) => {
     e.preventDefault();
     const { ids, bad } = parseIds($("#reprintIn").value);
-    const found = ids.filter((id) => boxes[id]), missing = ids.filter((id) => !boxes[id]);
+    // Taped items have no label to reprint (untick "Marked with coloured tape" on the item to give it one).
+    const found = ids.filter((id) => boxes[id] && !boxes[id].tape), missing = ids.filter((id) => !boxes[id]), taped = ids.filter((id) => boxes[id] && boxes[id].tape);
     if (bad.length) { toast(`Didn't understand "${bad[0]}". Use numbers and ranges, like 12-17, 21.`); return; }
-    if (!found.length) { toast(ids.length ? "None of those boxes are in the list." : "Type the box numbers to reprint, like 12-17, 21."); return; }
+    if (!found.length) { toast(taped.length && !missing.length ? `${taped.map((id) => tag(boxes[id])).join(", ")} ${taped.length > 1 ? "are" : "is"} marked with tape, so there's no label to reprint.` : ids.length ? "None of those boxes are in the list." : "Type the box numbers to reprint, like 12-17, 21."); return; }
     try {
       await requeue(found);
       $("#reprintIn").value = "";
       const rows = found.map((id) => Object.assign({ id }, boxes[id])).sort((a, b) => (a.test ? 1 : 0) - (b.test ? 1 : 0) || num(a.n) - num(b.n));
-      toast(`${ranges(rows).join(", ")} back on To print.${missing.length ? ` Not found: ${missing.map((id) => tag({ n: Number(id.slice(1)), test: id[0] === "t" })).join(", ")}.` : ""}`);
+      toast(`${ranges(rows).join(", ")} back on To print.${missing.length ? ` Not found: ${missing.map((id) => tag({ n: Number(id.slice(1)), test: id[0] === "t" })).join(", ")}.` : ""}${taped.length ? ` Taped, no label: ${taped.map((id) => tag(boxes[id])).join(", ")}.` : ""}`);
       render();
     } catch (err) { toast("Couldn't add those to the print list. Check the signal and try again."); }
   });
@@ -1343,7 +1401,11 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     delPhotoArmed = null; renderSheetPhotos();
     $("#shDest").innerHTML = `<option value="">No room yet</option>` + savoyRooms().map((r) => `<option value="${esc(r.id)}" ${r.id === b.dest ? "selected" : ""}>${esc(r.name)}</option>`).join("");
     removeArmed = false; $("#shRemove").textContent = "Remove";
-    $("#shReprint").hidden = !b.printedAt; // not printed yet: it's already waiting in To print
+    // Taped items have no label: no label to show or reprint. Not printed yet: it's already waiting in To print.
+    $("#shTape").checked = !!b.tape;
+    $("#shCatT").textContent = b.tape ? "What is it" : "What's in it (optional)";
+    $("#shLabel").hidden = !!b.tape;
+    $("#shReprint").hidden = !b.printedAt || !!b.tape;
     const focus = ask || !!(opts && opts.focus);
     $("#shCat").toggleAttribute("autofocus", focus);
     const d = $("#sheet"); if (d.showModal) d.showModal(); else d.setAttribute("open", "");
@@ -1426,7 +1488,16 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
   $("#shSave").addEventListener("click", async () => {
     if (!sheetId) return;
     const cat = $("#shCat").value.trim();
-    try { const r = await api("/api/boxes/" + sheetId, { method: "PATCH", body: JSON.stringify({ cat, dest: $("#shDest").value || null }) }); const roomChanged = (boxes[sheetId] && boxes[sheetId].dest) !== r.box.dest; boxes[sheetId] = r.box; toast(roomChanged ? "Saved. Reprint the label, since the room changed." : "Saved."); closeSheet(); render(); }
+    try {
+      const before = boxes[sheetId] || {};
+      const r = await api("/api/boxes/" + sheetId, { method: "PATCH", body: JSON.stringify({ cat, dest: $("#shDest").value || null, tape: $("#shTape").checked }) });
+      const roomChanged = before.dest !== r.box.dest, labelNow = before.tape && !r.box.tape;
+      boxes[sheetId] = r.box;
+      toast(labelNow ? (r.box.printedAt ? "Saved. It has a label again. Reprint it if you need one." : "Saved. Its label is waiting in To print.")
+        : r.box.tape ? (roomChanged ? "Saved. Change the tape to the new room's colour." : "Saved.")
+        : roomChanged ? "Saved. Reprint the label, since the room changed." : "Saved.");
+      closeSheet(); render();
+    }
     catch (err) { toast("Couldn't save that change."); }
   });
   $("#shCat").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("#shSave").click(); } });
