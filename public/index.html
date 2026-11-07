@@ -1318,12 +1318,14 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
   }
   async function stopVoice() {
     const v = voice; if (!v) return;
+    // Lock the button before waiting for the recorder to finish, so a tap in that moment can't
+    // start a second recording.
     voice = null; clearInterval(v.timer);
+    voiceBusy = true; setMic("busy", "Working it out…");
     const stopped = new Promise((res) => { v.rec.onstop = res; });
     try { v.rec.stop(); } catch (e) {}
     await Promise.race([stopped, new Promise((res) => setTimeout(res, 1500))]);
     v.stream.getTracks().forEach((t) => t.stop());
-    voiceBusy = true; setMic("busy", "Working it out…");
     try {
       const raw = new Blob(v.chunks, { type: v.rec.mimeType || "audio/mp4" });
       if (!raw.size) throw new Error("Nothing was recorded. Try again.");
