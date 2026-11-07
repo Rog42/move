@@ -60,6 +60,25 @@ h1, h2, h3 { margin: 0; text-wrap: balance; }
 .btn:disabled { opacity: .5; cursor: default; }
 .btn-primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 .btn-big { padding: 16px; font-size: 17px; border-radius: 12px; width: 100%; }
+/* Scan by camera or by voice, side by side */
+.scanrow { display: flex; gap: 10px; }
+.scanrow .btn-big { flex: 1 1 0; min-width: 0; }
+.btn-mic { background: var(--surface); border: 2px solid var(--accent); color: var(--accent); display: flex; align-items: center; justify-content: center; gap: 8px; }
+.btn-mic.is-rec { background: #B3261E; border-color: #B3261E; color: #FFFFFF; }
+.mic-dot { width: 10px; height: 10px; border-radius: 50%; background: currentColor; flex: none; }
+.mic-txt { display: flex; flex-direction: column; align-items: flex-start; line-height: 1.15; white-space: nowrap; }
+.mic-txt small { font-size: 12.5px; font-weight: 600; opacity: .9; }
+.btn-mic.is-rec .mic-dot { animation: micpulse 1s infinite; }
+@keyframes micpulse { 50% { opacity: .2; } }
+.voice { margin: 12px 0 4px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); display: flex; flex-direction: column; gap: 8px; }
+.voice-heard { margin: 0; color: var(--muted); font-size: 14px; }
+.voice-heard q { color: var(--ink); font-style: italic; }
+.voice-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+.voice-list li > b { display: block; font-size: 13px; color: var(--muted); font-weight: 600; }
+.voice-list .vbox { font-family: var(--f-mono); color: var(--ink); }
+.voice-list .is-bad > b { color: #B3261E; }
+.voice-acts { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.voice-acts label { display: flex; align-items: center; gap: 6px; font-size: 13.5px; color: var(--muted); }
 .btn-danger { color: var(--late); }
 .linkbtn { background: none; border: 0; padding: 0; color: var(--accent); font-weight: 600; font-size: 13px; }
 .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
@@ -270,12 +289,20 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
 
   <section class="card" aria-labelledby="scanH">
     <h2 id="scanH">Scan</h2>
-    <button class="btn btn-primary btn-big" type="button" id="scanBtn">Scan boxes</button>
+    <div class="scanrow">
+      <button class="btn btn-primary btn-big" type="button" id="scanBtn">Scan boxes</button>
+      <button class="btn btn-big btn-mic" type="button" id="micBtn" hidden><span class="mic-dot" aria-hidden="true"></span><span class="mic-txt"><span id="micLabel">Say numbers</span><small id="micSub" hidden>tap to stop</small></span></button>
+    </div>
+    <div class="voice" id="voiceCard" hidden aria-live="polite">
+      <p class="voice-heard" id="vHeard"></p>
+      <ul class="voice-list" id="vList"></ul>
+      <div class="voice-acts"><button class="btn" type="button" id="vUndo" hidden>Undo</button><label><input type="checkbox" id="vSpeak" checked> Read it back</label><button class="linkbtn" type="button" id="vClose">Close</button></div>
+    </div>
     <form class="numform" id="numForm" autocomplete="off">
       <input id="numIn" inputmode="numeric" maxlength="4" placeholder="Or type a box number" aria-label="Box number">
       <button class="btn" type="submit">Scan</button>
     </form>
-    <p class="hint">Each scan moves a box one step: packed, loaded, in room, then unpacked once it's emptied or set up.</p>
+    <p class="hint">Each scan moves a box one step: packed, loaded, in room, then unpacked once it's emptied or set up. Or tap <b>Say numbers</b> and call them out, like "loaded 12, 15, 284", with a short pause between numbers. Leave out the stage and each box moves one step.</p>
     <ul class="log" id="log" aria-live="polite"></ul>
   </section>
 
@@ -1372,6 +1399,169 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     toast(r.text);
     if (r.kind === "held") openSheet(id, { held: true }); else askIfBlank(id, r);
   });
+
+  // ---------- Voice: tap Say numbers, call out box numbers, tap again ----------
+  // The phone records, turns it into a small 16 kHz WAV and posts it to /api/voice, where Whisper
+  // writes it down and the numbers and stage are pulled out. The boxes are then moved here like
+  // ticked boxes (each with {from}, so another phone's scan isn't undone), shown, and read back.
+  const canRecord = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder);
+  $("#micBtn").hidden = !canRecord;
+  let voice = null, voiceBusy = false, voiceStarting = false, voiceLast = null, speechReady = false;
+  try { if (localStorage.getItem("voiceSpeak") === "0") $("#vSpeak").checked = false; } catch (e) {}
+  $("#vSpeak").addEventListener("change", () => { try { localStorage.setItem("voiceSpeak", $("#vSpeak").checked ? "1" : "0"); } catch (e) {} });
+  const sayNum = (id) => (id[0] === "t" ? "test " : "") + String(parseInt(id.slice(1), 10));
+  const andList = (xs) => (xs.length < 2 ? xs.join("") : xs.slice(0, -1).join(", ") + " and " + xs[xs.length - 1]);
+  function speak(text) {
+    try {
+      if (!$("#vSpeak").checked || !window.speechSynthesis || !text) return;
+      speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(text); u.lang = "en-AU"; u.rate = 1.05;
+      speechSynthesis.speak(u);
+    } catch (e) {}
+  }
+  // iPhones only speak after a tap has spoken once, so the mic tap says nothing first.
+  function readySpeech() { try { if (!speechReady && window.speechSynthesis) { speechSynthesis.speak(new SpeechSynthesisUtterance("")); speechReady = true; } } catch (e) {} }
+  function setMic(state, label) {
+    const b = $("#micBtn");
+    b.classList.toggle("is-rec", state === "rec"); b.disabled = state === "busy";
+    $("#micLabel").textContent = label || "Say numbers";
+    $("#micSub").hidden = state !== "rec";
+  }
+  // The button is locked while the phone asks for the microphone, so a second tap can't start a
+  // second recording that nothing would stop.
+  async function startVoice() {
+    readySpeech();
+    voiceStarting = true; setMic("busy", "Starting…");
+    let stream;
+    try { stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } }); }
+    catch (e) { voiceStarting = false; setMic("idle"); toast(e && e.name === "NotAllowedError" ? "The microphone is blocked. Allow it for this site, or type the numbers." : "Couldn't start the microphone."); return; }
+    let rec;
+    try { rec = new MediaRecorder(stream); } catch (e) { stream.getTracks().forEach((t) => t.stop()); voiceStarting = false; setMic("idle"); toast("This browser can't record. Try Safari."); return; }
+    voiceStarting = false;
+    const chunks = [];
+    rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+    voice = { stream, rec, chunks, t0: Date.now() };
+    rec.start(250);
+    try { navigator.vibrate && navigator.vibrate(30); } catch (e) {}
+    const tick = () => {
+      if (!voice) return;
+      const sec = Math.floor((Date.now() - voice.t0) / 1000);
+      setMic("rec", `Listening ${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`);
+      if (sec >= 30) stopVoice();
+    };
+    voice.timer = setInterval(tick, 250); tick();
+  }
+  async function stopVoice() {
+    const v = voice; if (!v) return;
+    // Lock the button before waiting for the recorder to finish, so a tap in that moment can't
+    // start a second recording.
+    voice = null; clearInterval(v.timer);
+    voiceBusy = true; setMic("busy", "Working it out…");
+    const stopped = new Promise((res) => { v.rec.onstop = res; });
+    try { v.rec.stop(); } catch (e) {}
+    await Promise.race([stopped, new Promise((res) => setTimeout(res, 1500))]);
+    v.stream.getTracks().forEach((t) => t.stop());
+    try {
+      const raw = new Blob(v.chunks, { type: v.rec.mimeType || "audio/mp4" });
+      if (!raw.size) throw new Error("Nothing was recorded. Try again.");
+      let body = raw, type = raw.type || "audio/mp4";
+      try { body = await toWav(raw); type = "audio/wav"; } catch (e) { /* send it as recorded */ }
+      const r = await fetch("/api/voice", { method: "POST", headers: { "content-type": type }, body, cache: "no-store" });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data.error || "Couldn't make that out. Try again.");
+      await applyVoice(data);
+    } catch (e) {
+      showVoice(null, e.message || "Couldn't make that out. Try again.");
+      beep(false); speak("Sorry, I didn't get that.");
+    }
+    voiceBusy = false; setMic("idle");
+  }
+  $("#micBtn").addEventListener("click", () => { if (voiceBusy || voiceStarting) return; if (voice) stopVoice(); else startVoice(); });
+  // Whatever the phone recorded (mp4 on iPhone, webm elsewhere) -> 16 kHz mono 16-bit WAV, which
+  // Whisper always reads, at about 32 KB a second.
+  async function toWav(blob) {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    const ab = await blob.arrayBuffer(), ctx = new Ctx();
+    let buf;
+    try { buf = await new Promise((res, rej) => { const pr = ctx.decodeAudioData(ab, res, rej); if (pr && pr.then) pr.then(res, rej); }); }
+    finally { try { ctx.close(); } catch (e) {} }
+    const rate = 16000, n = buf.length, chs = buf.numberOfChannels, mono = new Float32Array(n);
+    for (let c = 0; c < chs; c++) { const d = buf.getChannelData(c); for (let i = 0; i < n; i++) mono[i] += d[i] / chs; }
+    const step = buf.sampleRate / rate, len = Math.max(0, Math.floor(n / step)), pcm = new Int16Array(len);
+    for (let i = 0; i < len; i++) { // average each step's worth of samples (keeps it from going harsh)
+      const a = Math.floor(i * step), b = Math.max(a + 1, Math.floor((i + 1) * step));
+      let sum = 0; for (let j = a; j < b && j < n; j++) sum += mono[j];
+      pcm[i] = Math.max(-1, Math.min(1, sum / (b - a))) * 0x7fff;
+    }
+    const out = new DataView(new ArrayBuffer(44 + len * 2));
+    const str = (o, t) => { for (let i = 0; i < t.length; i++) out.setUint8(o + i, t.charCodeAt(i)); };
+    str(0, "RIFF"); out.setUint32(4, 36 + len * 2, true); str(8, "WAVE"); str(12, "fmt ");
+    out.setUint32(16, 16, true); out.setUint16(20, 1, true); out.setUint16(22, 1, true); out.setUint32(24, rate, true);
+    out.setUint32(28, rate * 2, true); out.setUint16(32, 2, true); out.setUint16(34, 16, true); str(36, "data"); out.setUint32(40, len * 2, true);
+    for (let i = 0; i < len; i++) out.setInt16(44 + i * 2, pcm[i], true);
+    return new Blob([out], { type: "audio/wav" });
+  }
+  // d: { text, stage, ids, missing, unclear } from /api/voice
+  async function applyVoice(d) {
+    const ids = (d.ids || []).filter((id) => boxes[id]);
+    const missing = (d.missing || []).concat((d.ids || []).filter((id) => !boxes[id]));
+    const moves = [], already = [], held = [], atEnd = [];
+    ids.forEach((id) => {
+      const b = boxes[id], from = statusOf(b), to = d.stage || STEP_KEYS[STEP_KEYS.indexOf(from) + 1];
+      if (!to) atEnd.push(id);
+      else if (to === from) already.push(id);
+      else if (heldFor(b, to)) held.push(id);
+      else moves.push({ id, from, to });
+    });
+    const { done, failed } = moves.length ? await setStages(moves) : { done: [], failed: [] };
+    done.forEach((m) => log.unshift({ id: m.id, t: tag(boxes[m.id]), cat: boxes[m.id].cat, note: STEP_NAME[m.to], from: m.from, undo: false }));
+    log = log.slice(0, 20);
+    if (done.length) hot = done[done.length - 1].id;
+    voiceLast = done.length ? done : null;
+    showVoice(d, null, { done, failed, already, held, atEnd, missing, stage: d.stage });
+    beep(done.length > 0 && !failed.length && !missing.length && !(d.unclear || []).length);
+    // Read back: "Loaded 12, 15 and 284. Couldn't find 999."
+    const said = [];
+    const byTo = {};
+    done.forEach((m) => (byTo[m.to] = byTo[m.to] || []).push(sayNum(m.id)));
+    Object.entries(byTo).forEach(([to, ns]) => said.push(`${STEP_NAME[to]} ${andList(ns)}.`));
+    if (already.length) said.push(`${andList(already.map(sayNum))} ${already.length > 1 ? "were" : "was"} already ${STEP_NAME[d.stage].toLowerCase()}.`);
+    if (held.length) said.push(`${andList(held.map(sayNum))} can't be loaded yet.`);
+    if (failed.length) said.push(`${andList(failed.map((m) => sayNum(m.id)))} changed on another phone, so ${failed.length > 1 ? "they were" : "it was"} left alone.`);
+    if (missing.length) said.push(`Couldn't find ${andList(missing.map(sayNum))}.`);
+    if ((d.unclear || []).length) said.push("Some numbers ran together. Say them again with a pause.");
+    if (!said.length) said.push(ids.length ? "Nothing to change." : "I didn't hear any box numbers.");
+    speak(said.join(" "));
+    render(); refresh();
+  }
+  function showVoice(d, error, r) {
+    $("#voiceCard").hidden = false;
+    $("#vHeard").innerHTML = d && d.text ? `Heard <q>${esc(d.text)}</q>` : d ? "Didn't hear anything." : "";
+    $("#vUndo").hidden = !voiceLast;
+    if (error) { $("#vList").innerHTML = `<li class="is-bad"><b>${esc(error)}</b></li>`; return; }
+    const boxText = (id) => { const b = boxes[id]; return `<span class="vbox">${esc(b ? tag(b) : id.toUpperCase().replace(/^B/, ""))}</span>${b && hasContents(b) ? " " + esc(whatText(b)) : ""}`; };
+    const line = (title, items, bad) => items.length ? `<li class="${bad ? "is-bad" : ""}"><b>${esc(title)}</b>${items.join(" · ")}</li>` : "";
+    const byTo = {};
+    r.done.forEach((m) => (byTo[m.to] = byTo[m.to] || []).push(m.id));
+    let html = Object.entries(byTo).map(([to, xs]) => line(`${STEP_NAME[to]} (${xs.length})`, xs.map(boxText))).join("");
+    html += line(`Already ${r.stage ? STEP_NAME[r.stage] : "there"}`, r.already.map(boxText));
+    html += line("Already unpacked", r.atEnd.map(boxText));
+    if (r.held.length) html += line(`Not yet: loading opens ${loadingText(Math.min(...r.held.map((id) => lockAt(boxes[id]))))}`, r.held.map(boxText), true);
+    html += line("Changed on another phone, left alone", r.failed.map((m) => boxText(m.id)), true);
+    html += line("Not found", r.missing.map((id) => `<span class="vbox">${esc(sayNum(id))}</span>`), true);
+    html += line("Ran together, say them again with a pause", (d.unclear || []).map((x) => `<span class="vbox">${esc(x)}</span>`), true);
+    $("#vList").innerHTML = html || `<li class="is-bad"><b>${(d.ids || []).length || r.missing.length ? "Nothing to change." : "No box numbers heard. Try again, a bit slower."}</b></li>`;
+  }
+  $("#vUndo").addEventListener("click", async () => {
+    const last = voiceLast; if (!last) return;
+    voiceLast = null; $("#vUndo").hidden = true;
+    const { done, failed } = await setStages(last.map((m) => ({ id: m.id, from: m.to, to: m.from })));
+    done.forEach((m) => { const i = log.findIndex((e) => e.id === m.id && e.from === m.to); if (i >= 0) log.splice(i, 1); });
+    toast(`${plural(done.length, "box", "boxes")} put back.${failed.length ? ` ${failText(failed)}` : ""}`);
+    speak(`${plural(done.length, "box", "boxes")} put back.`);
+    render(); refresh();
+  });
+  $("#vClose").addEventListener("click", () => { $("#voiceCard").hidden = true; voiceLast = null; });
 
   // Live camera
   let stream = null, running = false, detector = null, jsqr = null, lastSeen = { id: null, at: 0 };
