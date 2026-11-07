@@ -1,6 +1,8 @@
 /* The tab bar every page shares (filled in by nav.js). It sits flush with the top and sides of
    the screen whatever padding the page has: a page sets --navtabs-pull-t, -l and -r to its own
    body padding, and --navtabs-mb to the space it wants below the bar. */
+/* The bar's height, for anything else on a page that sticks to the top (it goes just below). */
+:root { --navtabs-h: calc(46px + env(safe-area-inset-top, 0px)); }
 .navtabs {
   position: sticky; top: 0; z-index: 30;
   margin: calc(-1 * var(--navtabs-pull-t, 0px)) calc(-1 * var(--navtabs-pull-r, 0px)) var(--navtabs-mb, 0px) calc(-1 * var(--navtabs-pull-l, 0px));
