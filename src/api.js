@@ -154,6 +154,8 @@ function cleanBoxFields(body) {
   if (typeof body.status === "string" && STEPS.includes(body.status)) out.status = body.status;
   // Where the box actually is, when it's ended up in a room other than its own. Null clears it.
   if (body.foundIn === null || (typeof body.foundIn === "string" && ID_RE.test(body.foundIn))) out.foundIn = body.foundIn;
+  // Marked with the room's coloured tape (number written on it) instead of a printed label.
+  if (typeof body.tape === "boolean") out.tape = body.tape;
   return out;
 }
 
@@ -202,6 +204,18 @@ export async function handleApi(request, env, parts) {
       const n = row.v, id = (test ? "t" : "b") + pad3(n);
       const box = { n, cat: f.cat || "", dest: f.dest ?? null, status: "labelled", createdAt: new Date().toISOString() };
       if (test) box.test = true;
+      // A taped item has no label to print, so it can start at any stage (furniture added after
+      // it's already moved goes straight to In room), within the same loading rule as a scan.
+      if (f.tape === true) {
+        box.tape = true;
+        if (f.status) {
+          if (STEPS.indexOf(f.status) > PACKED) {
+            const at = await boxLoadFrom(DB, env, box);
+            if (Date.now() < at) return json({ error: `Loading opens ${loadingText(at)}. Until then items can only go as far as Packed.`, locked: true, loadFrom: at }, 409);
+          }
+          box.status = f.status; box.statusAt = box.createdAt;
+        }
+      }
       await putDoc(DB, "boxes", id, box);
       return json({ id, box }, 201);
     }
@@ -330,6 +344,7 @@ export async function handleApi(request, env, parts) {
           const next = { ...doc.data, ...f };
           // In its own room after all (moved there, or its room changed to where it is): nothing to note.
           if (!next.foundIn || next.foundIn === next.dest) delete next.foundIn;
+          if (next.tape !== true) delete next.tape; // back to a printed label: it waits on To print if it never had one
           if (f.status) next.statusAt = new Date().toISOString();
           if (body.resetScan === true) next.scannedAt = null;
           const res = await DB.prepare("UPDATE docs SET data = ?, updated_at = ? WHERE col = 'boxes' AND id = ? AND updated_at = ?")
