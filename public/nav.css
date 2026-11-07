@@ -1,0 +1,25 @@
+/* The tab bar every page shares (filled in by nav.js). It sits flush with the top and sides of
+   the screen whatever padding the page has: a page sets --navtabs-pull-t, -l and -r to its own
+   body padding, and --navtabs-mb to the space it wants below the bar. */
+.navtabs {
+  position: sticky; top: 0; z-index: 30;
+  margin: calc(-1 * var(--navtabs-pull-t, 0px)) calc(-1 * var(--navtabs-pull-r, 0px)) var(--navtabs-mb, 0px) calc(-1 * var(--navtabs-pull-l, 0px));
+  padding-top: env(safe-area-inset-top, 0px);
+  background: var(--bg, #F1F4F2); border-bottom: 1px solid var(--line, #D7DED9);
+}
+.navtabs-in {
+  display: flex; max-width: 720px; margin: 0 auto;
+  padding-inline: max(6px, env(safe-area-inset-left, 0px)) max(6px, env(safe-area-inset-right, 0px));
+}
+.navtabs a {
+  flex: 1 1 0; min-width: 0; display: flex; align-items: center; justify-content: center;
+  height: 46px; margin-bottom: -1px; border-bottom: 3px solid transparent;
+  font: 600 14.5px/1 var(--f-body, system-ui, -apple-system, sans-serif); letter-spacing: 0;
+  color: var(--muted, #586560); text-decoration: none; white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
+}
+.navtabs a:hover { color: var(--ink, #17201C); }
+.navtabs a[aria-current="page"] { color: var(--accent, #0D6A56); border-bottom-color: var(--accent, #0D6A56); }
+.navtabs a:focus-visible { outline: 2px solid var(--accent, #0D6A56); outline-offset: -5px; border-radius: 8px; }
+@media (max-width: 360px) { .navtabs a { font-size: 13.5px; } }
+@media print { .navtabs { display: none !important; } }

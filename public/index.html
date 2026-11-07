@@ -12,8 +12,11 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="/nav.css">
+<script>/* which part of the page (/, /label or /find) to show, set before it's drawn */ document.documentElement.dataset.pane = /^\/label\/?$/.test(location.pathname) ? "label" : /^\/find\/?$/.test(location.pathname) ? "find" : "scan";</script>
 <style>
-/* One column, phone first: counts, scan, new label, then every box grouped by its Savoy room */
+/* One column, phone first, in three tabs: Scan (counts and the scanner), Label (new labels, tape,
+   several at once, To print) and Find (search, the wrong-room list and every box by Savoy room) */
 :root {
   --bg: #F1F4F2; --surface: #FFFFFF; --ink: #17201C; --muted: #586560; --line: #D7DED9;
   --accent: #0D6A56; --accent-soft: #DEEEE8; --on-accent: #FFFFFF;
@@ -38,13 +41,9 @@ h1, h2, h3 { margin: 0; text-wrap: balance; }
 .wrap { max-width: 720px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
 .main { display: flex; flex-direction: column; gap: 16px; padding-block: 16px; }
 
-.top { position: sticky; top: 0; z-index: 10; background: var(--bg); padding-top: env(safe-area-inset-top, 0px); border-bottom: 1px solid var(--line); }
-.top-in { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-block: 10px; }
-.brand { display: flex; flex-direction: column; text-decoration: none; color: var(--ink); line-height: 1.2; }
-.brand b { font-size: 18px; letter-spacing: -.01em; }
-.brand span { font-size: 12.5px; color: var(--muted); }
-.navs { display: flex; gap: 14px; }
-.navlink { color: var(--accent); font-weight: 600; font-size: 14px; text-underline-offset: 3px; }
+/* Tabs: only the current pane shows (html[data-pane] is set from the address, then by the tab bar) */
+.pane { display: flex; flex-direction: column; gap: 16px; }
+html[data-pane="scan"] .pane:not([data-pane="scan"]), html[data-pane="label"] .pane:not([data-pane="label"]), html[data-pane="find"] .pane:not([data-pane="find"]) { display: none; }
 
 .counts { display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; }
 .count { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; display: flex; flex-direction: column; gap: 0; }
@@ -271,152 +270,154 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
 </style>
 </head>
 <body>
-<header class="top">
-  <div class="wrap top-in">
-    <a class="brand" href="/"><b>Move boxes</b><span>133 Oratava → 12 Savoy Court · Sat 7 Nov</span></a>
-    <nav class="navs"><a class="navlink" href="/board">Board</a><a class="navlink" href="/plan">Plan</a><a class="navlink" href="/lists">Checklists</a></nav>
-  </div>
-</header>
+<nav class="navtabs" id="navtabs" data-current="phone"></nav>
+<script src="/nav.js"></script>
 
 <main class="wrap main">
-  <section class="counts" id="counts" aria-label="Boxes by stage"></section>
+  <div class="pane" data-pane="scan">
+    <section class="counts" id="counts" aria-label="Boxes by stage"></section>
 
-  <section class="card" id="findCard" aria-labelledby="findH">
-    <h2 id="findH">Find</h2>
-    <input type="search" id="findIn" placeholder="Box number, what's in it, or a room" aria-label="Find a box" autocomplete="off" spellcheck="false" enterkeyhint="search">
-    <div class="find-out" id="findOut" aria-live="polite"></div>
-  </section>
-
-  <section class="card" aria-labelledby="scanH">
-    <h2 id="scanH">Scan</h2>
-    <div class="scanrow">
-      <button class="btn btn-primary btn-big" type="button" id="scanBtn">Scan boxes</button>
-      <button class="btn btn-big btn-mic" type="button" id="micBtn" hidden><span class="mic-dot" aria-hidden="true"></span><span class="mic-txt"><span id="micLabel">Say numbers</span><small id="micSub" hidden>tap to stop</small></span></button>
-    </div>
-    <div class="voice" id="voiceCard" hidden aria-live="polite">
-      <p class="voice-heard" id="vHeard"></p>
-      <ul class="voice-list" id="vList"></ul>
-      <div class="voice-acts"><button class="btn" type="button" id="vUndo" hidden>Undo</button><label><input type="checkbox" id="vSpeak" checked> Read it back</label><button class="linkbtn" type="button" id="vClose">Close</button></div>
-    </div>
-    <form class="numform" id="numForm" autocomplete="off">
-      <input id="numIn" inputmode="numeric" maxlength="4" placeholder="Or type a box number" aria-label="Box number">
-      <button class="btn" type="submit">Scan</button>
-    </form>
-    <p class="hint">Each scan moves a box one step: packed, loaded, in room, then unpacked once it's emptied or set up. Or tap <b>Say numbers</b> and call them out, like "loaded 12, 15, 284", with a short pause between numbers. Leave out the stage and each box moves one step.</p>
-    <ul class="log" id="log" aria-live="polite"></ul>
-  </section>
-
-  <section class="card" aria-labelledby="makeH">
-    <h2 id="makeH">New box label</h2>
-    <div class="maker-grid">
-      <div class="maker-form">
-        <label class="fld">What's in it (optional)
-          <input type="text" id="lbCat" list="catList" maxlength="40" placeholder="e.g. Kitchenware" autocomplete="off">
-        </label>
-        <datalist id="catList"></datalist>
-        <label class="fld">Goes to
-          <select id="lbDest"></select>
-        </label>
-        <label class="testtick" id="lbTestRow"><input type="checkbox" id="lbTest"> Test label (numbered T001, T002… so real box numbers aren't used up)</label>
-        <button class="btn btn-primary btn-big" type="button" id="lbCreate">Create label</button>
-        <p class="hint" id="lbHint">Numbers come from one shared counter, so two people can never get the same one.</p>
+    <section class="card" aria-labelledby="scanH">
+      <h2 id="scanH">Scan</h2>
+      <div class="scanrow">
+        <button class="btn btn-primary btn-big" type="button" id="scanBtn">Scan boxes</button>
+        <button class="btn btn-big btn-mic" type="button" id="micBtn" hidden><span class="mic-dot" aria-hidden="true"></span><span class="mic-txt"><span id="micLabel">Say numbers</span><small id="micSub" hidden>tap to stop</small></span></button>
       </div>
-      <figure class="preview">
-        <canvas id="lbCanvas" width="800" height="1200" role="img" aria-label="Label preview"></canvas>
-        <div class="opts">
-          <select id="lbSize" aria-label="Label size">
-            <option value="100x150">4 × 6 in (M6)</option>
-            <option value="a4">A4 sheet, 4 labels (Avery L7169)</option>
-            <option value="48x30">Mini printer, 48 mm roll</option>
-            <option value="50x30">50 × 30 mm</option>
-            <option value="40x30">40 × 30 mm</option>
-            <option value="50x20">50 × 20 mm</option>
-          </select>
-          <div class="copies" role="group" aria-label="Labels per box">
-            <button type="button" id="cpMinus" aria-label="Fewer labels per box">−</button>
-            <output id="cpN" aria-live="polite">2 sides</output>
-            <button type="button" id="cpPlus" aria-label="More labels per box">+</button>
+      <div class="voice" id="voiceCard" hidden aria-live="polite">
+        <p class="voice-heard" id="vHeard"></p>
+        <ul class="voice-list" id="vList"></ul>
+        <div class="voice-acts"><button class="btn" type="button" id="vUndo" hidden>Undo</button><label><input type="checkbox" id="vSpeak" checked> Read it back</label><button class="linkbtn" type="button" id="vClose">Close</button></div>
+      </div>
+      <form class="numform" id="numForm" autocomplete="off">
+        <input id="numIn" inputmode="numeric" maxlength="4" placeholder="Or type a box number" aria-label="Box number">
+        <button class="btn" type="submit">Scan</button>
+      </form>
+      <p class="hint">Each scan moves a box one step: packed, loaded, in room, then unpacked once it's emptied or set up. Or tap <b>Say numbers</b> and call them out, like "loaded 12, 15, 284", with a short pause between numbers. Leave out the stage and each box moves one step.</p>
+      <ul class="log" id="log" aria-live="polite"></ul>
+    </section>
+  </div>
+
+  <div class="pane" data-pane="label">
+    <section class="card" aria-labelledby="makeH">
+      <h2 id="makeH">New box label</h2>
+      <div class="maker-grid">
+        <div class="maker-form">
+          <label class="fld">What's in it (optional)
+            <input type="text" id="lbCat" list="catList" maxlength="40" placeholder="e.g. Kitchenware" autocomplete="off">
+          </label>
+          <datalist id="catList"></datalist>
+          <label class="fld">Goes to
+            <select id="lbDest"></select>
+          </label>
+          <label class="testtick" id="lbTestRow"><input type="checkbox" id="lbTest"> Test label (numbered T001, T002… so real box numbers aren't used up)</label>
+          <button class="btn btn-primary btn-big" type="button" id="lbCreate">Create label</button>
+          <p class="hint" id="lbHint">Numbers come from one shared counter, so two people can never get the same one.</p>
+        </div>
+        <figure class="preview">
+          <canvas id="lbCanvas" width="800" height="1200" role="img" aria-label="Label preview"></canvas>
+          <div class="opts">
+            <select id="lbSize" aria-label="Label size">
+              <option value="100x150">4 × 6 in (M6)</option>
+              <option value="a4">A4 sheet, 4 labels (Avery L7169)</option>
+              <option value="48x30">Mini printer, 48 mm roll</option>
+              <option value="50x30">50 × 30 mm</option>
+              <option value="40x30">40 × 30 mm</option>
+              <option value="50x20">50 × 20 mm</option>
+            </select>
+            <div class="copies" role="group" aria-label="Labels per box">
+              <button type="button" id="cpMinus" aria-label="Fewer labels per box">−</button>
+              <output id="cpN" aria-live="polite">2 sides</output>
+              <button type="button" id="cpPlus" aria-label="More labels per box">+</button>
+            </div>
           </div>
+          <div class="align" id="sheetAlign" hidden>
+            <span>Sheet alignment, mm down</span>
+            <label>Top row <input type="number" id="adjTop" step="1" min="-20" max="20" inputmode="numeric"></label>
+            <label>Bottom row <input type="number" id="adjBottom" step="1" min="-20" max="20" inputmode="numeric"></label>
+          </div>
+          <p class="hint">Label size, sides and sheet alignment are shared, so every phone prints the same way.</p>
+          <div class="row">
+            <button class="btn" type="button" id="lbPrint" disabled>Print</button>
+            <button class="btn" type="button" id="lbShare" disabled>Share</button>
+            <button class="btn" type="button" id="lbSave" disabled>Save</button>
+          </div>
+        </figure>
+      </div>
+    </section>
+
+    <details class="card fold" id="tapeCard">
+      <summary><span class="fold-t"><b>Tape instead of a label</b><span>For painted or varnished furniture: write the number on the room's coloured tape</span></span><i class="chev" aria-hidden="true"></i></summary>
+      <div class="fold-body">
+        <p class="hint">Gets a number like a box, so you can find it, tick it or scan it by number, but nothing goes on To print.</p>
+        <div class="tape-form">
+          <label class="fld">What is it <input type="text" id="tpCat" list="catList" maxlength="40" placeholder="e.g. Dining table" autocomplete="off"></label>
+          <label class="fld">Goes to <select id="tpDest"></select></label>
+          <label class="fld">Where it's at <select id="tpStage"></select></label>
+          <button class="btn btn-primary" type="button" id="tpAdd">Add item</button>
         </div>
-        <div class="align" id="sheetAlign" hidden>
-          <span>Sheet alignment, mm down</span>
-          <label>Top row <input type="number" id="adjTop" step="1" min="-20" max="20" inputmode="numeric"></label>
-          <label>Bottom row <input type="number" id="adjBottom" step="1" min="-20" max="20" inputmode="numeric"></label>
+        <div class="tape-out" id="tpOut" hidden></div>
+      </div>
+    </details>
+
+    <details class="card fold" id="manyCard">
+      <summary><span class="fold-t"><b>Make several labels</b><span id="manySub">A room's worth at once, like 4 boxes for the kitchen</span></span><i class="chev" aria-hidden="true"></i></summary>
+      <div class="fold-body">
+        <p class="hint">Build a list, such as 4 boxes for the kitchen or a desk and a cot for the guest room, then create them all at once. Leave "What" blank to write the contents on later.</p>
+        <div class="many-form">
+          <label class="fld">Room <select id="mRoom"></select></label>
+          <label class="fld">What (optional) <input type="text" id="mWhat" list="catList" maxlength="40" placeholder="e.g. Desk, Guitar case" autocomplete="off"></label>
+          <div class="fld">How many
+            <div class="copies" role="group" aria-label="How many labels">
+              <button type="button" id="mMinus" aria-label="Fewer">−</button>
+              <output id="mN" aria-live="polite">4</output>
+              <button type="button" id="mPlus" aria-label="More">+</button>
+            </div>
+          </div>
+          <button class="btn" type="button" id="mAdd">Add to list</button>
         </div>
-        <p class="hint">Label size, sides and sheet alignment are shared, so every phone prints the same way.</p>
+        <ul class="mlist" id="mList"></ul>
+        <label class="testtick"><input type="checkbox" id="mTest"> Make these test labels (T001…)</label>
+        <button class="btn btn-primary btn-big" type="button" id="mCreate" disabled>Create labels</button>
+      </div>
+    </details>
+
+    <section class="card" id="queueCard" aria-labelledby="queueH" hidden>
+      <h2 id="queueH">To print</h2>
+      <p class="queue-text" id="queueText"></p>
+      <ul class="qlist" id="qList" aria-label="Labels waiting to print"></ul>
+      <div class="qsel"><button class="linkbtn" type="button" id="qAll">Tick all</button><button class="linkbtn" type="button" id="qNone">Untick all</button></div>
+      <div class="row" id="queueBtns">
+        <button class="btn btn-primary" type="button" id="queuePrint">Print ticked</button>
+        <button class="btn" type="button" id="queueFull" hidden>Full sheets only</button>
+        <button class="btn" type="button" id="queueSkip">Mark ticked as printed</button>
+      </div>
+      <div class="queue-confirm" id="queueConfirm" hidden>
+        <span id="queueConfirmText">Did they print OK?</span>
         <div class="row">
-          <button class="btn" type="button" id="lbPrint" disabled>Print</button>
-          <button class="btn" type="button" id="lbShare" disabled>Share</button>
-          <button class="btn" type="button" id="lbSave" disabled>Save</button>
+          <button class="btn btn-primary" type="button" id="queueOk">Yes, take them off the list</button>
+          <button class="btn" type="button" id="queueNo">No, keep them</button>
         </div>
-      </figure>
-    </div>
-  </section>
-
-  <details class="card fold" id="tapeCard">
-    <summary><span class="fold-t"><b>Tape instead of a label</b><span>For painted or varnished furniture: write the number on the room's coloured tape</span></span><i class="chev" aria-hidden="true"></i></summary>
-    <div class="fold-body">
-      <p class="hint">Gets a number like a box, so you can find it, tick it or scan it by number, but nothing goes on To print.</p>
-      <div class="tape-form">
-        <label class="fld">What is it <input type="text" id="tpCat" list="catList" maxlength="40" placeholder="e.g. Dining table" autocomplete="off"></label>
-        <label class="fld">Goes to <select id="tpDest"></select></label>
-        <label class="fld">Where it's at <select id="tpStage"></select></label>
-        <button class="btn btn-primary" type="button" id="tpAdd">Add item</button>
       </div>
-      <div class="tape-out" id="tpOut" hidden></div>
-    </div>
-  </details>
+      <form class="reprint" id="reprintForm" autocomplete="off">
+        <label class="fld">Reprint labels <input type="text" id="reprintIn" placeholder="e.g. 12-17, 21" autocapitalize="characters" spellcheck="false"></label>
+        <button class="btn" type="submit">Add to To print</button>
+      </form>
+    </section>
+  </div>
 
-  <details class="card fold" id="manyCard">
-    <summary><span class="fold-t"><b>Make several labels</b><span id="manySub">A room's worth at once, like 4 boxes for the kitchen</span></span><i class="chev" aria-hidden="true"></i></summary>
-    <div class="fold-body">
-      <p class="hint">Build a list, such as 4 boxes for the kitchen or a desk and a cot for the guest room, then create them all at once. Leave "What" blank to write the contents on later.</p>
-      <div class="many-form">
-        <label class="fld">Room <select id="mRoom"></select></label>
-        <label class="fld">What (optional) <input type="text" id="mWhat" list="catList" maxlength="40" placeholder="e.g. Desk, Guitar case" autocomplete="off"></label>
-        <div class="fld">How many
-          <div class="copies" role="group" aria-label="How many labels">
-            <button type="button" id="mMinus" aria-label="Fewer">−</button>
-            <output id="mN" aria-live="polite">4</output>
-            <button type="button" id="mPlus" aria-label="More">+</button>
-          </div>
-        </div>
-        <button class="btn" type="button" id="mAdd">Add to list</button>
-      </div>
-      <ul class="mlist" id="mList"></ul>
-      <label class="testtick"><input type="checkbox" id="mTest"> Make these test labels (T001…)</label>
-      <button class="btn btn-primary btn-big" type="button" id="mCreate" disabled>Create labels</button>
-    </div>
-  </details>
+  <div class="pane" data-pane="find">
+    <section class="card" id="findCard" aria-labelledby="findH">
+      <h2 id="findH" class="vh">Find a box</h2>
+      <input type="search" id="findIn" placeholder="Box number, what's in it, or a room" aria-label="Find a box" autocomplete="off" spellcheck="false" enterkeyhint="search">
+      <div class="find-out" id="findOut" aria-live="polite"></div>
+    </section>
 
-  <section class="card" id="queueCard" aria-labelledby="queueH" hidden>
-    <h2 id="queueH">To print</h2>
-    <p class="queue-text" id="queueText"></p>
-    <ul class="qlist" id="qList" aria-label="Labels waiting to print"></ul>
-    <div class="qsel"><button class="linkbtn" type="button" id="qAll">Tick all</button><button class="linkbtn" type="button" id="qNone">Untick all</button></div>
-    <div class="row" id="queueBtns">
-      <button class="btn btn-primary" type="button" id="queuePrint">Print ticked</button>
-      <button class="btn" type="button" id="queueFull" hidden>Full sheets only</button>
-      <button class="btn" type="button" id="queueSkip">Mark ticked as printed</button>
-    </div>
-    <div class="queue-confirm" id="queueConfirm" hidden>
-      <span id="queueConfirmText">Did they print OK?</span>
-      <div class="row">
-        <button class="btn btn-primary" type="button" id="queueOk">Yes, take them off the list</button>
-        <button class="btn" type="button" id="queueNo">No, keep them</button>
-      </div>
-    </div>
-    <form class="reprint" id="reprintForm" autocomplete="off">
-      <label class="fld">Reprint labels <input type="text" id="reprintIn" placeholder="e.g. 12-17, 21" autocapitalize="characters" spellcheck="false"></label>
-      <button class="btn" type="submit">Add to To print</button>
-    </form>
-  </section>
-
-  <section aria-labelledby="allH" style="display:flex;flex-direction:column;gap:12px">
-    <div class="row" style="justify-content:space-between"><h2 id="allH" style="font-size:16px">All boxes</h2><button class="linkbtn" type="button" id="foldAll" hidden>Open all rooms</button></div>
-    <div class="filters" id="filters" role="group" aria-label="Show boxes"></div>
-    <div id="register"><div class="empty"><b>Loading boxes</b></div></div>
-  </section>
+    <section aria-labelledby="allH" style="display:flex;flex-direction:column;gap:12px">
+      <div class="row" style="justify-content:space-between"><h2 id="allH" style="font-size:16px">All boxes</h2><button class="linkbtn" type="button" id="foldAll" hidden>Open all rooms</button></div>
+      <div class="filters" id="filters" role="group" aria-label="Show boxes"></div>
+      <div id="register"><div class="empty"><b>Loading boxes</b></div></div>
+    </section>
+  </div>
 </main>
 
 <div class="cam" id="cam" hidden>
@@ -751,7 +752,8 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
   }
   function renderTickBar() {
     [...ticked].forEach((id) => { if (!boxes[id]) ticked.delete(id); });
-    const n = ticked.size, show = n > 0 || !!lastMove;
+    // The bar belongs to All boxes, so it only shows on the Find tab (ticks are kept meanwhile).
+    const n = ticked.size, show = (n > 0 || !!lastMove) && paneNow() === "find";
     $("#tickBar").hidden = !show; document.body.classList.toggle("has-tickbar", show);
     if (!show) return;
     const undoing = !n && lastMove;
@@ -1774,10 +1776,10 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
   $("#shReprint").addEventListener("click", async () => {
     if (!sheetId) return;
     const id = sheetId;
-    try { await requeue([id]); toast(`${tag(boxes[id])} is back on To print.`); closeSheet(); render(); $("#queueCard").scrollIntoView({ behavior: "smooth", block: "center" }); }
+    try { await requeue([id]); toast(`${tag(boxes[id])} is back on To print.`); closeSheet(); render(); showPane("label", "push"); $("#queueCard").scrollIntoView({ behavior: "smooth", block: "center" }); }
     catch (err) { toast("Couldn't add it to the print list."); }
   });
-  $("#shLabel").addEventListener("click", () => { if (!sheetId) return; current = sheetId; hot = sheetId; closeSheet(); render(); $("#lbCanvas").scrollIntoView({ behavior: "smooth", block: "center" }); });
+  $("#shLabel").addEventListener("click", () => { if (!sheetId) return; current = sheetId; hot = sheetId; closeSheet(); render(); showPane("label", "push"); $("#lbCanvas").scrollIntoView({ behavior: "smooth", block: "center" }); });
   $("#shRemove").addEventListener("click", async () => {
     if (!sheetId) return;
     if (!removeArmed) { removeArmed = true; $("#shRemove").textContent = "Tap again to remove"; clearTimeout(removeT); removeT = setTimeout(() => { removeArmed = false; $("#shRemove").textContent = "Remove"; }, 3000); return; }
@@ -1785,6 +1787,34 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     try { await api("/api/boxes/" + id, { method: "DELETE" }); delete boxes[id]; if (current === id) current = null; closeSheet(); toast(`${wasTest ? "Test label" : "Box"} ${t} removed.${wasTest ? "" : " Its number won't be reused."}`); render(); }
     catch (err) { toast("Couldn't remove that box."); }
   });
+
+  // ---------- Tabs: Scan (/), Label (/label) and Find (/find) are parts of this page ----------
+  // The tab bar (nav.js) has plain links; here they switch panes without a reload, so the camera,
+  // a half-typed label and the box list stay as they were. Each pane keeps its own scroll spot.
+  const PANES = { scan: "/", label: "/label", find: "/find" };
+  const PANE_TITLES = { scan: "Scan", label: "Label", find: "Find" };
+  const paneFor = (path) => (/^\/label\/?$/.test(path) ? "label" : /^\/find\/?$/.test(path) ? "find" : "scan");
+  const paneY = {};
+  function paneNow() { return document.documentElement.dataset.pane || "scan"; }
+  function showPane(k, how) {
+    if (!PANES[k]) return;
+    const was = paneNow();
+    if (k === was && how === "push") { window.scrollTo({ top: 0, behavior: "smooth" }); return; } // tapping the tab you're on: back to the top
+    paneY[was] = window.scrollY;
+    document.documentElement.dataset.pane = k;
+    document.querySelectorAll("#navtabs a[data-tab]").forEach((a) => { if (a.dataset.tab === k) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current"); });
+    document.title = `${PANE_TITLES[k]} · Move Boxes`;
+    if (how === "push" && location.pathname !== PANES[k]) history.pushState({ pane: k }, "", PANES[k]);
+    renderTickBar();
+    if (how !== "stay") window.scrollTo(0, paneY[k] || 0);
+  }
+  $("#navtabs").addEventListener("click", (e) => {
+    const a = e.target.closest("a[data-tab]");
+    if (!a || !PANES[a.dataset.tab] || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button) return;
+    e.preventDefault(); showPane(a.dataset.tab, "push");
+  });
+  window.addEventListener("popstate", () => showPane(paneFor(location.pathname), "pop"));
+  showPane(paneNow(), "stay");
 
   // ---------- Arriving from a scanned QR (/b/014) ----------
   async function fromLink() {
@@ -1796,7 +1826,6 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
     try { sessionStorage.setItem("linkScan", JSON.stringify({ id, at: Date.now() })); } catch (e) {}
     const r = await scan(id, "link");
     toast(r.text);
-    const row = document.querySelector(`[data-box="${id}"]`); if (row) row.scrollIntoView({ block: "center" });
     if (r.kind === "held") openSheet(id, { held: true }); else askIfBlank(id, r);
   }
 

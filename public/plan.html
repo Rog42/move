@@ -12,6 +12,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap">
+<link rel="stylesheet" href="/nav.css">
 <style>
 /* 12 Savoy Court, each area filled with its room's marker colour, so helpers can match a box to a room at a glance */
 :root {
@@ -31,6 +32,8 @@
 body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.45 var(--f-body); -webkit-font-smoothing: antialiased;
   padding: max(14px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(24px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); }
 h1, h2, p { margin: 0; }
+/* the shared tab bar sits flush with the top and sides, above the body's own padding */
+body { --navtabs-pull-t: max(14px, env(safe-area-inset-top, 0px)); --navtabs-pull-l: max(16px, env(safe-area-inset-left, 0px)); --navtabs-pull-r: max(16px, env(safe-area-inset-right, 0px)); --navtabs-mb: 14px; }
 a { color: var(--accent); }
 button { font: inherit; color: inherit; cursor: pointer; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
@@ -111,12 +114,14 @@ button { font: inherit; color: inherit; cursor: pointer; }
 </style>
 </head>
 <body>
+<nav class="navtabs" id="navtabs" data-current="plan"></nav>
+<script src="/nav.js"></script>
 <header class="top">
   <div class="title">
     <h1>12 Savoy Court</h1>
     <p>Each room is the colour of its marker on the boxes</p>
   </div>
-  <nav class="links" aria-label="Move pages"><a href="/">Scanner</a><a href="/board">Board</a><button type="button" id="print">Print</button></nav>
+  <div class="links"><button type="button" id="print">Print</button></div>
 </header>
 
 <div class="wrap">
