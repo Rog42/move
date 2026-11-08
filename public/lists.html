@@ -11,6 +11,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Saira+Stencil+One&display=swap">
+<link rel="stylesheet" href="/nav.css">
 <style>
 /* One narrow column: stencil countdown + from/to, progress, questions, then two tabbed lists bucketed by when each job is due */
 :root {
@@ -30,6 +31,8 @@
 }
 * { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
+/* the shared tab bar sits flush with the top and sides, above the body's own padding */
+body { --navtabs-pull-t: calc(20px + env(safe-area-inset-top, 0px)); --navtabs-pull-l: max(16px, env(safe-area-inset-left, 0px)); --navtabs-pull-r: max(16px, env(safe-area-inset-right, 0px)); --navtabs-mb: 20px; }
 body {
   margin: 0; background: var(--bg); color: var(--ink);
   font-family: var(--f-body); font-size: 15px; line-height: 1.5;
@@ -83,7 +86,7 @@ h1, h2, h3 { text-wrap: balance; margin: 0; }
 .seg button + button { border-left: 1px solid var(--line); }
 @media (max-width: 520px) { .q { grid-template-columns: 1fr; } .seg { grid-row: auto; grid-column: 1; justify-self: start; } }
 
-.controls { display: flex; flex-direction: column; gap: 12px; position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--bg); padding-block: 10px 8px; margin-block: -10px -8px; }
+.controls { display: flex; flex-direction: column; gap: 12px; position: sticky; top: var(--navtabs-h, env(safe-area-inset-top, 0px)); z-index: 5; background: var(--bg); padding-block: 10px 8px; margin-block: -10px -8px; }
 body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg); }
 .tabs { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 4px; }
 .tab { border: 0; background: none; border-radius: 9px; padding: 9px 8px; font-weight: 600; font-size: 14px; display: flex; justify-content: center; align-items: baseline; flex-wrap: wrap; column-gap: 7px; color: var(--muted); }
@@ -155,9 +158,9 @@ ul.items { list-style: none; margin: 0; padding: 0; background: var(--surface); 
 </style>
 </head>
 <body>
+<nav class="navtabs" id="navtabs" data-current="lists"></nav>
+<script src="/nav.js"></script>
 <div class="wrap">
-  <nav class="nav" aria-label="Move pages"><span class="eyebrow">Move checklists</span><a href="/">Box scanning</a></nav>
-
   <header class="box" aria-label="Move summary">
     <div class="count" id="count">–</div>
     <div class="count-side">

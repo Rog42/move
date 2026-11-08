@@ -16,6 +16,10 @@ binding = "DB"
 database_name = "move"
 database_id = "dfe4fa59-944a-435f-9dbc-47a78cbc1702"
 
+# Workers AI: Whisper writes down what's said into the scanner's mic (/api/voice).
+[ai]
+binding = "AI"
+
 [vars]
 # The checklists (/api/lists/*) stay locked until one of these is set. See README step 3.
 ACCESS_TEAM_DOMAIN = "rog42"        # Zero Trust team name (rog42.cloudflareaccess.com)
@@ -27,6 +31,9 @@ ACCESS_TEAM_DOMAIN = "rog42"        # Zero Trust team name (rog42.cloudflareacce
 # above, so they get their own test database and the same Access team name.
 # move-preview holds the Savoy rooms and no boxes, so trying things out never
 # touches the live box list. The checklists stay locked on previews.
+[previews.ai]
+binding = "AI"
+
 [previews.vars]
 ACCESS_TEAM_DOMAIN = "rog42"
 

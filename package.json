@@ -6,6 +6,7 @@
   "scripts": {
     "db:local": "wrangler d1 execute move --local --file=schema.sql",
     "dev": "wrangler dev",
+    "test": "node --test test/*.test.js",
     "deploy": "wrangler deploy"
   },
   "devDependencies": {
